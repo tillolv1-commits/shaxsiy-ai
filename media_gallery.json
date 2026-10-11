@@ -1,0 +1,49 @@
+[
+  {
+    "id": "img-1791579630653",
+    "type": "image",
+    "prompt": "Toshkent City 2050",
+    "url": "https://image.pollinations.ai/prompt/Toshkent%20City%202050?width=1024&height=1024&seed=9487963&nologo=true&model=flux",
+    "aspectRatio": "1:1",
+    "createdAt": "2026-10-09T21:00:30.653Z",
+    "status": "ready"
+  },
+  {
+    "id": "vid-1791579597289",
+    "type": "video",
+    "prompt": "Koinotda asta suzib yurgan astronavt",
+    "url": "https://image.pollinations.ai/prompt/A%20solitary%20astronaut%20in%20an%20intricately%20detailed%20modern%20spacesuit%20drifts%20weightlessly%20through%20the%20deep%20cosmos%2C%20their%20reflective%20gold%20visor%20mirroring%20the%20glowing%20curvature%20of%20Earth%20below.%20Dramatic%20cinematic%20lighting%20illuminates%20swirling%2C%20vibrant%20nebulae%20in%20deep%20magenta%20and%20electric%20cyan%2C%20creating%20an%208k%20photorealistic%20masterpiece%20with%20smooth%2C%20slow-motion%20zero-gravity%20movement.?width=1280&height=720&seed=7021098&nologo=true&model=flux",
+    "aspectRatio": "16:9",
+    "createdAt": "2026-10-09T20:59:57.289Z",
+    "status": "ready"
+  },
+  {
+    "id": "img-1791579575386",
+    "type": "image",
+    "prompt": "Toshkent teleminorasi shom paytida",
+    "url": "https://image.pollinations.ai/prompt/Toshkent%20teleminorasi%20shom%20paytida?width=1024&height=1024&seed=5602248&nologo=true&model=flux",
+    "aspectRatio": "1:1",
+    "createdAt": "2026-10-09T20:59:35.386Z",
+    "status": "ready"
+  },
+  {
+    "id": "seed-img-1",
+    "type": "image",
+    "prompt": "Registon maydoni shom paytida, oltin rangli chiroqlar bilan yoritilgan, 8K ultra aniqlik",
+    "url": "https://image.pollinations.ai/prompt/Registan%20Square%20Samarkand%20at%20twilight%20golden%20illumination%20masterpiece%20photorealistic?width=1024&height=1024&nologo=true&seed=42",
+    "aspectRatio": "1:1",
+    "createdAt": "2026-10-09T19:59:28.044Z",
+    "status": "ready",
+    "style": "Fotorealistik (8K)"
+  },
+  {
+    "id": "seed-img-2",
+    "type": "image",
+    "prompt": "Toshkent City 2050: osmono'par binolar uzra uchayotgan zamonaviy transportlar, kiberpank",
+    "url": "https://image.pollinations.ai/prompt/Tashkent%20futuristic%20city%202050%20flying%20cars%20skyscrapers%20cyberpunk%20neon%20lighting?width=1280&height=720&nologo=true&seed=99",
+    "aspectRatio": "16:9",
+    "createdAt": "2026-10-09T18:59:28.044Z",
+    "status": "ready",
+    "style": "Kiberpank & Neon"
+  }
+]

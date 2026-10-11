@@ -1,0 +1,6 @@
+{
+  "name": "Telegram AI Shaxsiy Yordamchi (Digital Twin)",
+  "description": "Telegram botingizga ulanib, sizning o'rnigizga aynan sizning uslubingizda (slang, ohang, qisqalik) xabarlarga avtomatik javob beruvchi shaxsiy AI yordamchi tizimi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
