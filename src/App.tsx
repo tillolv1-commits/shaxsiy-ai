@@ -260,7 +260,12 @@ export default function App() {
         )}
 
         {activeTab === 'history' && (
-          <ChatHistoryTab ownerName={persona.ownerName} />
+          <ChatHistoryTab
+            ownerName={persona.ownerName}
+            voiceName={persona.voiceName}
+            voiceProfile={persona.voiceProfile}
+            speakingPace={persona.speakingPace}
+          />
         )}
 
         {activeTab === 'style' && (

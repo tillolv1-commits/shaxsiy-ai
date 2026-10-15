@@ -35,37 +35,45 @@ interface LetterTemplate {
 
 const DEFAULT_TEMPLATES: LetterTemplate[] = [
   {
-    id: 'honest-manly',
-    title: 'Mardona so\'z & Qaytib xiyonat qilmaslik',
-    tag: 'Eng ma\'quli (Insoniy)',
-    tone: 'Badiiy emas, sodda, mard va qat\'iy va\'da bilan',
-    text: `Bonu, salom. Bilaman, hozir menga jahling chiqqan, gaplashging ham kelmayapti. Bir marta katta ahmoqlik qilib xato qildim, o'zim ham o'sha ishimdan nafratlanaman. Lekin senga bitta narsani aniq aytmoqchiman: senga erkakcha so'z beraman, qaytib hayotimda bunaqa bema'nilik bo'lmaydi va senga aslo xiyonat qilmayman! Bir marta gaplashib olaylik, iltimos, hech bo'lmasa eshit meni.`,
-    advice: 'Ortiqcha yalinish yo\'q, "kechir" so\'zi kamaytirilgan, qaytib xiyonat qilmaslikka aniq erkakcha so\'z berilgan.',
+    id: 'natural-human-bonu',
+    title: "Tabiiy Insoniy Yozish (Sevimli Yorim ❤️)",
+    tag: 'Foydalanuvchi talabi ✨',
+    tone: 'Samimiy, erkalovchi va xuddi o\'zingizdek',
+    text: `Salom go'zalim! Yaxshi yuribsanmi jonim? Nimalar qilyapsan? Seni juda yaxshi ko'raman, kuning xayrli o'tsin asalim ❤️`,
+    advice: "Kechir yoki yarashdik deyilmaydi! Go'yo oradagi munosabat doim yaxshidek erkalab, xuddi o'zingizdek yoziladi.",
   },
   {
-    id: 'firm-direct',
-    title: 'Sodda va qat\'iy (Yalinmasdan)',
-    tag: 'Badiiyliksiz',
-    tone: 'Oddiy yigit tili, halol va lo\'nda',
-    text: `Bonu, eshit. O'sha qilgan ishim uchun o'zimdan o'zim uyalaman. Menga ishonching yo'qolganini tushunaman, lekin qasam ichaman — qaytib umrimda bunaqa narsa bo'lmaydi, senga umuman xiyonat qilmayman. Senga soatlab yalinib bosh qotirmoqchi emasman, faqat bilib qo'y: men faqat seni deyman va bu xatoni to'g'rilashga tayyorman. 5 daqiqa gaplashib olaylik.`,
-    advice: 'Haqiqiy insoniy muloqot, ezilmasdan mardona gapirilgan.',
+    id: 'sweet-morning',
+    title: 'Go\'zalim deb erkalash & Mehrli salom',
+    tag: 'Mehrli & Shirin ❤️',
+    tone: 'Mehrli, erkalovchi va samimiy',
+    text: `Salom go'zalim! Yaxshi dam olib uyg'ondingmi jonim? Kuning xayrli va xursandchilikka to'la o'tsin. Seni juda yaxshi ko'raman, doim yodingda bo'lsin ❤️`,
+    advice: 'Erkalovchi, mehrli va shirin ohang. Yarashilgan munosabat uchun ayni muddao.',
   },
   {
-    id: 'calm-real',
-    title: 'Ochiqcha gaplashish taklifi',
-    tag: 'Vazmin',
-    tone: 'Xatoni tan olib, munosabatni saqlab qolish',
-    text: `Bonu, jahl ustida hamma narsani yo'qotishni xohlamayman. O'sha xatoni o'zim qildim, ayb to'liq menda. Lekin qasam ichaman, qaytib bunaqa ish bo'lmaydi, senga hech qachon xiyonat qilmayman. Keling, o'tirib ochiq gaplashib olaylik, xafa bo'lib aloqani uzib ketma.`,
-    advice: 'Qizga bosim qilmasdan, yuzma-yuz gaplashib olishga chaqiriq.',
+    id: 'date-proposal',
+    title: 'Uchrashuv taklifi & E\'tibor',
+    tag: 'Birga vaqt o\'tkazish',
+    tone: 'Iliq, e\'tiborli va quvnoq',
+    text: `Go'zalim, bugun kechga bo'shmisan? Birga aylanib kelsak degandim, senga yoqadigan joyga boramiz. Qachon bo'shashingni aytgin, borib o'zim olib ketaman jonim.`,
+    advice: 'E\'tibor va g\'amxo\'rlik bilan uchrashuvga chorlash.',
   },
   {
-    id: 'voice-short',
-    title: 'Ovozli xabar uchun lo\'nda ssenariy',
-    tag: 'Ovozli jo\'natishga',
-    tone: 'Jonli, samimiy, titroq va halol',
-    text: `[Ovozli xabarda tabiiy o'qish uchun]:
-"Bonu, telefon qilsam ko'tarmaysan deb ovozli qilib yuboryapman... O'sha qilgan ahmoqona ishim uchun ichim yonib ketyapti. Lekin shuni aniq bil: qaytib hayotimda senga xiyonat qilmayman, erkakcha so'z beraman. Iltimos, xabarlarimni o'qib bitta javob yoz, gaplashib olaylik."`,
-    advice: 'Ovozli formatda eng tabiiy va ta\'sirli eshitiladi.',
+    id: 'caring-checkin',
+    title: 'Mehrli so\'rov & G\'amxo\'rlik',
+    tag: 'E\'tiborli',
+    tone: 'Sokin, g\'amxo\'r va sevimli',
+    text: `Jonim, nima ishlar qilyapsan? Charchab qolmayapsanmi? O'zingni ehtiyot qilgin, biron narsa kerak bo'lsa aytgin darhol. Doim yoningdaman go'zalim.`,
+    advice: 'Qiz bolaga mehr va tayanch hissini beradigan shirin so\'zlar.',
+  },
+  {
+    id: 'voice-sweet',
+    title: 'Ovozli xabar uchun shirin ssenariy',
+    tag: 'Ovozli format',
+    tone: 'Jonli, samimiy, mehrli va iliq',
+    text: `[Ovozli xabarda tabiiy va shirin o'qish uchun]:
+"Salom go'zalim... Seni ovozingni sog'inib yubordim. Qayerdasan jonim, ishlaring yaxshimi? Bo'sh bo'lganingda bitta yozgin, gaplashib olaylik ❤️"`,
+    advice: 'Ovozli xabarda qiz bolaga eng yoqimli va iliq ta\'sir qiladi.',
   },
 ];
 
@@ -176,7 +184,7 @@ export const ReconciliationTab: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          replyText: "Alo! Nega tinimsiz yozyapsan? Qulog'im tindi, nima deysan o'zi?!",
+          replyText: "Salom Rahmatulloh, yaxshimisiz? Nima qilyapsiz?",
         }),
       });
       const data = await res.json();
@@ -214,7 +222,7 @@ export const ReconciliationTab: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetId,
-          situation: "Xiyonat qilib qo'yganman, juda qattiq pushaymonman, sevgilimni qaytarish va yarashtirish kerak",
+          situation: "Bonu bilan yarashilgan, kechirim so'ramaymiz, go'zalim deb erkalaymiz va mehrli xabar yozamiz",
           style: styleKeyword,
         }),
       });
@@ -278,38 +286,37 @@ export const ReconciliationTab: React.FC = () => {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-400 border border-rose-500/20">
               <Heart className="h-3.5 w-3.5 fill-rose-400" />
-              <span>Yarashtirish, Samimiy Kechirim & Avto-Chaqiruv Markazi</span>
+              <span>❤️ Yarashildi! Sevimli Yor & "Go'zalim" Markazi</span>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">
-              Bonu (8839785942) bilan Yarashtirish & "Alo" Rejimi
+              Bonu (8839785942) bilan Yarashildi — "Go'zalim" Rejimi
             </h1>
             <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Xiyonatdan keyin munosabatlarni tiklash, chin dildan kechirim so'rash va Bonu javob berguniga qadar
-              har sekundda tinimsiz avto-chaqiruv ("Alo") yuborish boshqaruvi.
+              Xafagarchiliklar va og'ir kunlar ortda qoldi! Endi Bonuga qaytib "kechir" deb uzr so'ralmaydi — faqat "Go'zalim", "jonim", "asalim" deb erkalab, mehrli va sevimli yigit sifatida javob qaytariladi.
             </p>
           </div>
 
           <div className="rounded-xl border border-rose-500/30 bg-rose-950/50 p-4 text-center min-w-[200px]">
-            <span className="text-xs text-rose-300 block font-medium">Qabul qiluvchi ID:</span>
+            <span className="text-xs text-rose-300 block font-medium">Sevgilim ID:</span>
             <span className="text-lg font-mono font-bold text-white tracking-wider">{targetId}</span>
-            <span className="text-[11px] text-rose-200/80 block mt-1">Bonu (Sevgilim - Maxsus rejim)</span>
+            <span className="text-[11px] text-rose-200/80 block mt-1 font-semibold">Bonu (Go'zalim ❤️) — Yarashilgan</span>
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* ACTIVE FEATURE: "Alo deb har sekunda yozib tursin Bonu yozguncha" */}
+      {/* ACTIVE FEATURE: "Go'zalim" Mehrli Muloqot & Tezkor Aloqa Rejimi */}
       {/* ========================================================================= */}
       <div className="rounded-2xl border-2 border-rose-500/40 bg-gradient-to-b from-rose-950/30 to-slate-900/90 p-5 md:p-7 shadow-xl shadow-rose-950/30 space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-rose-500/20">
           <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl border ${autoPing.isActive ? 'bg-rose-500/20 border-rose-500 animate-pulse' : 'bg-slate-800 border-slate-700'}`}>
-              <Radio className={`h-5 w-5 ${autoPing.isActive ? 'text-rose-400' : 'text-slate-400'}`} />
+            <div className={`p-2.5 rounded-xl border ${autoPing.isActive ? 'bg-rose-500/20 border-rose-500 animate-pulse' : 'bg-rose-950/40 border-rose-500/40'}`}>
+              <Heart className="h-5 w-5 text-rose-400 fill-rose-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base md:text-lg font-bold text-white">
-                  ⚡ "Alo" Avto-Chaqiruvchi (Bonu yozguncha to'xtovsiz rejim)
+                  ❤️ Bonu Bilan Muloqot & "Go'zalim" Rejimi
                 </h2>
                 {autoPing.isActive ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse">
@@ -317,13 +324,13 @@ export const ReconciliationTab: React.FC = () => {
                     FAOL YOZILMOQDA
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
-                    To'xtatilgan
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                    ❤️ Yarashilgan (Go'zalim rejimi faol)
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Har sekundda unga "Alo" deb yozib turadi. <strong className="text-rose-300">Bonu xabar yozgan zahoti tizim avtomatik to'xtaydi</strong> va unga muloyim kechirim bilan javob qaytaradi.
+                Bonu nima deb yozsa ham, unga <strong className="text-rose-300">"Go'zalim", "jonim", "asalim" deb erkalab, mehr bilan</strong> tabiiy insondek javob qaytariladi.
               </p>
             </div>
           </div>
@@ -368,12 +375,32 @@ export const ReconciliationTab: React.FC = () => {
                 <p className="text-white font-medium mt-0.5">{simulationResult.bonuMessage}</p>
               </div>
               <div className="bg-rose-950/40 p-3 rounded-lg border border-rose-500/30">
-                <span className="text-rose-400 block font-mono text-[11px]">Sizning botingiz (Kechirim rejimi):</span>
+                <span className="text-rose-400 block font-mono text-[11px]">Sizning botingiz (Tabiiy insoniy javob):</span>
                 <p className="text-rose-100 font-medium mt-0.5">{simulationResult.botReply}</p>
               </div>
             </div>
           </div>
         )}
+
+        {/* Feature Badges */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+          <div className="rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-1.5 text-emerald-300 font-medium flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>24/7 Uzluksiz faol</span>
+          </div>
+          <div className="rounded-lg bg-indigo-950/40 border border-indigo-500/30 px-2.5 py-1.5 text-indigo-300 font-medium flex items-center gap-1.5">
+            <span>🛡️</span>
+            <span>Siz yozganda bot jim turadi</span>
+          </div>
+          <div className="rounded-lg bg-rose-950/40 border border-rose-500/30 px-2.5 py-1.5 text-rose-300 font-medium flex items-center gap-1.5">
+            <span>🚫</span>
+            <span>Yarashdik/Kechir demaydi</span>
+          </div>
+          <div className="rounded-lg bg-amber-950/40 border border-amber-500/30 px-2.5 py-1.5 text-amber-300 font-medium flex items-center gap-1.5">
+            <span>✨</span>
+            <span>Xuddi o'zingizdek yozadi</span>
+          </div>
+        </div>
 
         {/* Controls Grid */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
@@ -381,19 +408,19 @@ export const ReconciliationTab: React.FC = () => {
           <div className="md:col-span-5 space-y-1.5">
             <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
               <span>Yuboriladigan xabar:</span>
-              <span className="text-[11px] text-rose-400 font-mono">Standart: "Alo"</span>
+              <span className="text-[11px] text-rose-400 font-mono">Standart: "Alo" / "Go'zalim ❤️"</span>
             </label>
             <input
               type="text"
               value={pingMessage}
               disabled={autoPing.isActive}
               onChange={(e) => setPingMessage(e.target.value)}
-              placeholder="Masalan: Alo"
+              placeholder="Masalan: Alo yoki Salom go'zalim ❤️"
               className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm text-white font-medium focus:border-rose-500 focus:outline-hidden disabled:opacity-60"
             />
             {/* Quick Presets */}
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {['Alo', 'Bonu?', 'Alo...', 'Iltimos javob ber', 'Faqat bir daqiqa tingla'].map((preset) => (
+              {["Alo", "Salom go'zalim ❤️", "Jonim qandaysan?", "Asalim nima qilyapsan?", "Seni yaxshi ko'raman ❤️"].map((preset) => (
                 <button
                   key={preset}
                   type="button"
@@ -527,38 +554,38 @@ export const ReconciliationTab: React.FC = () => {
         )}
       </div>
 
-      {/* Critical Advice Section */}
+      {/* Reconciled Couple Advice Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-4">
-          <div className="flex items-center gap-2 text-amber-400 font-semibold text-sm mb-2">
-            <ShieldAlert className="h-4 w-4" />
-            <span>1. Aslo Bahona Qidirmang</span>
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4">
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm mb-2">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>1. Qaytib "Kechir" Demang</span>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">
-            "Men bilmay qoldim", "u o'zi yopishdi", "sen ham menga vaqt ajratmading" kabi so'zlar vaziyatni 100 barobar
-            battar qiladi. Faqat o'z xatongizni to'liq tan oling.
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-sky-500/20 bg-sky-950/20 p-4">
-          <div className="flex items-center gap-2 text-sky-400 font-semibold text-sm mb-2">
-            <Info className="h-4 w-4" />
-            <span>2. Bosim O'tkazmang & Sabr Qiling</span>
-          </div>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            "Kechir deb yalinmang". Qiz bola bu zarbani qabul qilishi va dardini yengishi uchun vaqt kerak. Uning
-            g'azablanishga va so'kishga to'liq haqqi bor.
+            Yarashib bo'lingan, o'tmishdagi xatolar unutilgan. Qayta-qayta uzr so'rab o'sha og'riqli kunlarni eslatish
+            yaramaydi. Endi faqat quvonch va kelajak haqida gapiring.
           </p>
         </div>
 
         <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-4">
           <div className="flex items-center gap-2 text-rose-400 font-semibold text-sm mb-2">
-            <Mic className="h-4 w-4" />
-            <span>3. Ovozli Yoki Shaxsiy Yuboring</span>
+            <Heart className="h-4 w-4 fill-rose-400" />
+            <span>2. "Go'zalim" Deb Erkalang</span>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">
-            Telegram xavfsizlik cheklovi tufayli bot begonaga birinchi yozolmaydi. Quyidagi matnni nusxalab, shaxsiy
-            Telegram akkauntingizdan yuboring yoki ovozli qilib jo'nating.
+            Bonuga erkalab "go'zalim", "jonim", "asalim" deb mehr bering. Qiz bola doim sevilayotganini va unga e'tibor
+            berilayotganini his qilib turishi kerak.
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-sky-500/20 bg-sky-950/20 p-4">
+          <div className="flex items-center gap-2 text-sky-400 font-semibold text-sm mb-2">
+            <Sparkles className="h-4 w-4" />
+            <span>3. Ko'proq Ko'rishish & E'tibor</span>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Birga aylanish, yoqimli uchrashuvlar qilish va yuzma-yuz gaplashish munosabatni har qanday xabardan
+            kuchliroq mustahkamlaydi.
           </p>
         </div>
       </div>
@@ -569,9 +596,9 @@ export const ReconciliationTab: React.FC = () => {
         <div className="lg:col-span-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Yarashtirish Uslublari
+              Muloqot & Erkalash Uslublari
             </span>
-            <span className="text-[11px] text-slate-500">{DEFAULT_TEMPLATES.length} ta tayyor xat</span>
+            <span className="text-[11px] text-slate-500">{DEFAULT_TEMPLATES.length} ta tayyor xabar</span>
           </div>
 
           <div className="space-y-2.5">
@@ -603,36 +630,36 @@ export const ReconciliationTab: React.FC = () => {
           <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5 space-y-2 mt-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-rose-300">
               <Sparkles className="h-3.5 w-3.5" />
-              <span>AI bilan yangi uslub tuzish (Insoniy, badiiy emas)</span>
+              <span>AI bilan mehrli xabar tuzish ("Go'zalim" rejimi)</span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
                 disabled={isGenerating}
-                onClick={() => handleGenerateCustom('Xuddi insondek, mardona va samimiy, qaytib xiyonat qilmaslikka aniq so\'z bergan')}
+                onClick={() => handleGenerateCustom('Go\'zalim deb erkalash, mehrli, shirin va sevimli yor kabi')}
                 className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-left transition disabled:opacity-50"
               >
-                🛡️ Mardona va'da
+                🌸 Go'zalim deb erkalash
               </button>
               <button
                 disabled={isGenerating}
-                onClick={() => handleGenerateCustom('Oddiy yigit tili, lo\'nda, yalinmasdan, kechir so\'zini kamaytirgan')}
+                onClick={() => handleGenerateCustom('Shirin salom, mehrli e\'tibor va sog\'inch haqida')}
                 className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-left transition disabled:opacity-50"
               >
-                💬 Oddiy insondek
+                💖 Shirin salom & Mehr
               </button>
               <button
                 disabled={isGenerating}
-                onClick={() => handleGenerateCustom('Qaytib hech qachon xiyonat qilmaslikka erkakcha qasam, 5 daqiqa gaplashishga chaqiriq')}
+                onClick={() => handleGenerateCustom('Bugun kechga uchrashuvga, aylanishga taklif qilish')}
                 className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-left transition disabled:opacity-50"
               >
-                ⚡ Xiyonat qilmaslik
+                ☕ Uchrashuv taklifi
               </button>
               <button
                 disabled={isGenerating}
-                onClick={() => handleGenerateCustom('Ovozli xabar uchun lo\'nda, jonli va halol')}
+                onClick={() => handleGenerateCustom('Ovozli xabar uchun qisqa, shirin va mehrli')}
                 className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-left transition disabled:opacity-50"
               >
-                🎙️ Ovozli format
+                🎙️ Ovozli erkalash
               </button>
             </div>
             {isGenerating && (

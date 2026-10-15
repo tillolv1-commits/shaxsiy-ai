@@ -41,6 +41,10 @@ export interface PersonaConfig {
     allowVideos: boolean;
     defaultStyle?: string;
   };
+  voiceReplyMode?: boolean;
+  voiceName?: string;
+  speakingPace?: number;
+  voiceProfile?: 'natural' | 'friendly' | 'professional';
 }
 
 export interface GeneratedMedia {

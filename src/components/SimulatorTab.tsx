@@ -90,6 +90,7 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [correctionText, setCorrectionText] = useState('');
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const simAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -97,25 +98,69 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleSpeak = (text: string, msgId: string) => {
-    if (!('speechSynthesis' in window)) {
-      alert("Brauzeringiz ovozli eshitishni qo'llab-quvvatlamaydi.");
-      return;
-    }
+  useEffect(() => {
+    return () => {
+      if (simAudioRef.current) {
+        simAudioRef.current.pause();
+        simAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleSpeak = async (text: string, msgId: string) => {
     if (speakingMsgId === msgId) {
-      window.speechSynthesis.cancel();
+      if (simAudioRef.current) {
+        simAudioRef.current.pause();
+        simAudioRef.current = null;
+      }
       setSpeakingMsgId(null);
       return;
     }
-    window.speechSynthesis.cancel();
+
+    if (simAudioRef.current) {
+      simAudioRef.current.pause();
+      simAudioRef.current = null;
+    }
+
     setSpeakingMsgId(msgId);
-    const cleanText = text.replace(/\|\|\|/g, '. ');
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'uz-UZ';
-    utterance.rate = 1.0;
-    utterance.onend = () => setSpeakingMsgId(null);
-    utterance.onerror = () => setSpeakingMsgId(null);
-    window.speechSynthesis.speak(utterance);
+    try {
+      const cleanText = text
+        .replace(/\[LOCATION\]/gi, '')
+        .replace(/\[IMAGE_PROMPT:[^\]]+\]/gi, '')
+        .replace(/\[VIDEO_PROMPT:[^\]]+\]/gi, '')
+        .replace(/\|\|\|/g, '. ')
+        .trim();
+
+      const res = await fetch('/api/voice/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText,
+          voiceName: persona.voiceName || 'Puck',
+          pace: persona.speakingPace || 1.0,
+          profile: persona.voiceProfile || 'natural',
+        }),
+      });
+
+      if (!res.ok) throw new Error("Audio yuklab bo'lmadi");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      simAudioRef.current = audio;
+
+      audio.onended = () => {
+        setSpeakingMsgId(null);
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setSpeakingMsgId(null);
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+    } catch (err) {
+      console.warn("Server audio xatosi:", err);
+      setSpeakingMsgId(null);
+    }
   };
 
   const handleTeachPersona = async (msgId: string) => {
@@ -202,6 +247,7 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           confidence: data.confidence || 0.95,
           appliedTone: persona.tone,
+          isVoice: Boolean(data.isVoice ?? (persona.voiceReplyMode !== false)),
           hasLocation: data.hasLocation,
           locationData: data.locationData,
           media: data.media,
@@ -239,6 +285,7 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
         text: smartText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         hasLocation: isLocFallback,
+        isVoice: persona.voiceReplyMode !== false,
         locationData: isLocFallback
           ? {
               latitude: persona.locationConfig?.latitude || 41.2995,
@@ -322,6 +369,29 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
+                const nextMode = persona.voiceReplyMode === false;
+                const updated: PersonaConfig = {
+                  ...persona,
+                  voiceReplyMode: nextMode,
+                };
+                if (onUpdatePersona) onUpdatePersona(updated);
+                if (onSaveToServer) onSaveToServer();
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors border cursor-pointer ${
+                persona.voiceReplyMode !== false
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 shadow-xs'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+              }`}
+              title="Faqat ovozli xabar rejimini yoqish/o'chirish (mening nomimdan faqat ovozli habar yozsin)"
+            >
+              <Mic className={`h-3.5 w-3.5 ${persona.voiceReplyMode !== false ? 'text-emerald-400' : 'text-slate-500'}`} />
+              <span className="hidden sm:inline">
+                {persona.voiceReplyMode !== false ? 'Ovozli Rejim Faol' : 'Matn Rejimi'}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
                 setMessages([
                   {
                     id: 'init',
@@ -329,11 +399,12 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
                     senderName: persona.ownerName,
                     text: persona.greetingPhrase || 'Assalomu alaykum! Xizmat bormi?',
                     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    isVoice: persona.voiceReplyMode !== false,
                   },
                 ]);
               }}
               title="Chatni tozalash"
-              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors text-xs flex items-center gap-1"
+              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors text-xs flex items-center gap-1 cursor-pointer"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Tozalash</span>
@@ -379,9 +450,14 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
                           : 'bg-slate-800 text-slate-100 rounded-bl-xs border border-slate-700/70'
                       }`}
                     >
+                      {(msg.isVoice || msg.text.startsWith('🎤') || msg.text.startsWith('[Ovozli')) && bIdx === 0 && (
+                        <div className={`flex items-center gap-1.5 mb-1 pb-1 border-b text-xs ${isMe ? 'border-sky-500/50 text-sky-100' : 'border-slate-700 text-sky-400'}`}>
+                          <span>🎙️ Ovozli xabar</span>
+                        </div>
+                      )}
                       <p className="whitespace-pre-wrap">{bubbleText}</p>
                       {bIdx === bubbles.length - 1 && (
-                        <div className="mt-1 flex items-center justify-end gap-1.5 text-[10px] text-sky-100/70 select-none">
+                        <div className={`mt-1 flex items-center justify-end gap-1.5 text-[10px] select-none ${isMe ? 'text-sky-100/70' : 'text-slate-400'}`}>
                           <span className="font-mono">{msg.timestamp}</span>
                           {isMe && <CheckCheck className="h-3.5 w-3.5 text-sky-200 inline" />}
                         </div>
@@ -579,13 +655,30 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
           })}
 
           {isTyping && (
-            <div className="flex items-center gap-2 text-slate-400 text-xs px-2 py-1">
-              <div className="flex gap-1">
-                <span className="h-2 w-2 rounded-full bg-sky-400 animate-bounce"></span>
-                <span className="h-2 w-2 rounded-full bg-sky-400 animate-bounce [animation-delay:0.2s]"></span>
-                <span className="h-2 w-2 rounded-full bg-sky-400 animate-bounce [animation-delay:0.4s]"></span>
-              </div>
-              <span className="italic">{persona.ownerName} yozmoqda...</span>
+            <div className="flex items-center gap-2 text-xs px-2 py-1">
+              {persona.voiceReplyMode !== false ? (
+                <>
+                  <div className="flex items-end gap-1 h-3.5">
+                    <span className="w-1 bg-emerald-400 rounded-full animate-bounce [animation-duration:0.6s] h-3"></span>
+                    <span className="w-1 bg-emerald-400 rounded-full animate-bounce [animation-duration:0.6s] [animation-delay:0.15s] h-4"></span>
+                    <span className="w-1 bg-emerald-400 rounded-full animate-bounce [animation-duration:0.6s] [animation-delay:0.3s] h-2"></span>
+                    <span className="w-1 bg-emerald-400 rounded-full animate-bounce [animation-duration:0.6s] [animation-delay:0.45s] h-3.5"></span>
+                  </div>
+                  <span className="text-emerald-400 font-medium italic flex items-center gap-1 font-mono">
+                    <Mic className="h-3 w-3 animate-pulse" />
+                    {persona.ownerName} ovozli xabar yozmoqda...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="flex gap-1">
+                    <span className="h-2 w-2 rounded-full bg-sky-400 animate-bounce"></span>
+                    <span className="h-2 w-2 rounded-full bg-sky-400 animate-bounce [animation-delay:0.2s]"></span>
+                    <span className="h-2 w-2 rounded-full bg-sky-400 animate-bounce [animation-delay:0.4s]"></span>
+                  </div>
+                  <span className="text-slate-400 italic">{persona.ownerName} yozmoqda...</span>
+                </>
+              )}
             </div>
           )}
 

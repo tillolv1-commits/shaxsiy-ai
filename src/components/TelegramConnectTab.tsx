@@ -36,10 +36,13 @@ export const TelegramConnectTab: React.FC<TelegramConnectTabProps> = ({
   const [menuButtonSuccess, setMenuButtonSuccess] = useState<string | null>(null);
   const [menuButtonError, setMenuButtonError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [menuMode, setMenuMode] = useState<'commands' | 'web_app'>('commands');
 
-  const miniAppUrl = 'https://ais-pre-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app';
+  const miniAppUrl = typeof window !== 'undefined'
+    ? window.location.origin
+    : 'https://ais-dev-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app';
 
-  const handleSetMenuButton = async () => {
+  const handleSetMenuButton = async (selectedMode: 'commands' | 'web_app' = menuMode) => {
     if (!botToken.trim()) {
       setMenuButtonError('Avval yuqoridagi bot tokenini kiriting va tasdiqlang.');
       return;
@@ -51,11 +54,19 @@ export const TelegramConnectTab: React.FC<TelegramConnectTabProps> = ({
       const res = await fetch('/api/telegram/set-menu-button', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken: botToken.trim(), miniAppUrl }),
+        body: JSON.stringify({
+          botToken: botToken.trim(),
+          miniAppUrl,
+          mode: selectedMode,
+        }),
       });
       const data = await res.json();
       if (data.ok) {
-        setMenuButtonSuccess('Ajoyib! Mini App botning pastki chap menyusiga biriktirildi. Telegramda botingizni ochib ko\'ring!');
+        setMenuButtonSuccess(
+          selectedMode === 'commands'
+            ? "Ajoyib! Telegramda botning pastki menyusi 'Buyruqlar menyusi'ga o'rnatildi (100% xatosiz ishlaydi)."
+            : "Ajoyib! Mini App veb-manzili botning pastki chap menyusiga biriktirildi."
+        );
       } else {
         setMenuButtonError(data.error || 'Menyu tugmasini biriktirishda xatolik yuz berdi.');
       }
@@ -342,30 +353,58 @@ export const TelegramConnectTab: React.FC<TelegramConnectTabProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white">
-                  Telegram Mini App (TMA) Integratsiyasi
+                  Telegram Mini App & Menyu Boshqaruvi
                 </h3>
                 <span className="text-[10px] font-mono text-sky-300 bg-sky-950/80 px-2 py-0.5 rounded border border-sky-800">
-                  Web App Faol
+                  Buyruqlar & Web App
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Ushbu boshqaruv panelini to'g'ridan-to'g'ri Telegram ichida ochiladigan Mini App sifatida ulash
+                Telegram bot menyusini boshqarish va ilovani to'g'ridan-to'g'ri ochish
               </p>
             </div>
           </div>
 
-          <button
-            onClick={handleSetMenuButton}
-            disabled={isSettingMenuButton || !botToken}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition-colors shadow-md disabled:opacity-40 cursor-pointer shrink-0"
-          >
-            {isSettingMenuButton ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Smartphone className="h-4 w-4" />
-            )}
-            Bot Menyu Tugmasiga O'rnatish
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => handleSetMenuButton('commands')}
+              disabled={isSettingMenuButton || !botToken}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors shadow-md disabled:opacity-40 cursor-pointer shrink-0"
+              title="100% ishonchli: /start, /status, /yarashdim, /alo, /stop"
+            >
+              <Check className="h-4 w-4" />
+              📋 Buyruqlar Menyusi (100% Kafolatlangan)
+            </button>
+            <button
+              onClick={() => handleSetMenuButton('web_app')}
+              disabled={isSettingMenuButton || !botToken}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs border border-slate-700 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+            >
+              <Smartphone className="h-4 w-4 text-sky-400" />
+              📱 Mini App Tugmasi
+            </button>
+          </div>
+        </div>
+
+        {/* Diagnosis & Help Box */}
+        <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs space-y-2">
+          <div className="flex items-center gap-2 font-semibold text-amber-300">
+            <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+            <span>Nega Mini App Telegram ichida ochilmay qolishi mumkin?</span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-amber-200/90">
+            Google AI Studio rivojlantirish muhiti xavfsizlik siyosati (Google hisobiga kirish va iframe cheklovlari) sababli, Telegram ichki WebView oynasida ba'zan oq ekran ko'rinishi mumkin.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
+            <div className="p-2.5 rounded-lg bg-slate-950/70 border border-amber-500/20">
+              <strong className="text-emerald-400 block mb-0.5">✅ 1-yechim (Brauzerda ochish):</strong>
+              Quyidagi havolani nusxalab Google Chrome yoki Safari orqali to'g'ridan-to'g'ri oching.
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-950/70 border border-amber-500/20">
+              <strong className="text-sky-400 block mb-0.5">✅ 2-yechim (Telegram chatida):</strong>
+              Botga <code className="text-sky-300">/yarashdim</code>, <code className="text-sky-300">/alo</code>, <code className="text-sky-300">/stop</code> yozib, to'liq boshqaring!
+            </div>
+          </div>
         </div>
 
         {menuButtonSuccess && (
@@ -384,11 +423,20 @@ export const TelegramConnectTab: React.FC<TelegramConnectTabProps> = ({
 
         {/* Mini App URL Display */}
         <div className="space-y-2">
-          <label className="text-xs text-slate-300 block font-medium">Mini App Havolasi (Web App URL):</label>
+          <label className="text-xs text-slate-300 block font-medium">Boshqaruv Havolasi (Brauzer & Web App URL):</label>
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-mono text-sky-300 truncate select-all">
               {miniAppUrl}
             </div>
+            <a
+              href={miniAppUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Brauzerda Ochish
+            </a>
             <button
               onClick={() => {
                 navigator.clipboard.writeText(miniAppUrl);

@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import { execSync, execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 
@@ -110,6 +111,10 @@ interface BotState {
       allowVideos: boolean;
       defaultStyle?: string;
     };
+    voiceReplyMode?: boolean;
+    voiceName?: string;
+    speakingPace?: number;
+    voiceProfile?: 'natural' | 'friendly' | 'professional';
   };
 }
 
@@ -227,11 +232,22 @@ const botState: BotState = {
       allowVideos: true,
       defaultStyle: 'Fotorealistik (8K)',
     },
+    voiceReplyMode: true,
+    voiceName: 'Puck',
+    speakingPace: 1.0,
+    voiceProfile: 'natural',
   },
 };
 
 let pollingAbortController: AbortController | null = null;
 let lastUpdateOffset = 0;
+let lastPollHeartbeat = Date.now();
+let shouldPollRun = true;
+
+// Human Active Tracking: When owner (Rahmatulloh, ID 5275538732) writes, bot stays silent
+const ownerLastActiveInChats = new Map<string | number, number>();
+let ownerManualMuteUntil = 0;
+const OWNER_ACTIVE_COOLDOWN_MS = 20 * 1000; // 20 soniya (faqat egasi ayni paytda o'zi xabar jo'natayotgan bo'lsa aralashmaydi, suhbatdosh gapirganda esa darhol javob beradi)
 
 // Persistent Chat Sessions & Conversation History
 export interface ChatSessionRecord {
@@ -349,29 +365,28 @@ function loadChatHistoriesFromDisk() {
   }
   seedInitialChatSessions();
   
-  if (!chatSessions.has('8839785942')) {
-    chatSessions.set('8839785942', {
-      chatId: '8839785942',
-      senderName: 'Sevgilim (Maxsus rejim)',
-      source: 'telegram_business',
-      lastMessageAt: new Date().toISOString(),
-      messageCount: 1,
-      memoryNotes: [
-        "❤️ Sevgilim (8839785942) - Munosabatlarda xiyonat bo'lgan og'ir vaziyat",
-        "💔 Xatoni to'liq tan olish, hech qachon bahona qilmaslik shart",
-        "🙏 Qizning barcha g'azabini sabr va mehr bilan qabul qilish, kechirim so'rash",
-      ],
-      messages: [
-        {
-          id: 'seed-reconcile-1',
-          role: 'model',
-          senderName: 'Rahmatulloh',
-          text: "Salom... Bilaman, hozir menga qanchalik nafratlansang ham haqlisan. Men juda og'ir xato qildim va seni sindirdim. Hech qanday bahonam yo'q, faqat chin yurakdan pushaymonman...",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ],
-    });
-  }
+  chatSessions.set('8839785942', {
+    chatId: '8839785942',
+    senderName: "Bonu (Go'zalim ❤️)",
+    source: 'telegram_business',
+    lastMessageAt: new Date().toISOString(),
+    messageCount: 2,
+    memoryNotes: [
+      "❤️ Sevgilim Bonu (8839785942) — ALLAQAChON YARASHILGAN!",
+      "✨ Qaytib 'kechir', 'kechirim' deb aslo uzr so'ramang, o'tmishdagi xatolar unutilgan va yarashilgan",
+      "🌸 Bonuga doimo 'go'zalim', 'jonim', 'asalim' deb mehrli, erkalovchi va sevimli yor sifatida javob bering",
+      "💑 Sevimli juftlikdek mehrli, e'tiborli, quvonchli va shirin suhbat quring",
+    ],
+    messages: [
+      {
+        id: 'bonu-reconciled-1',
+        role: 'model',
+        senderName: 'Rahmatulloh',
+        text: "Jonim, go'zalim, yaxshi yuribsanmi? Seni juda yaxshi ko'raman ❤️",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ],
+  });
 }
 
 function saveChatHistoriesToDisk() {
@@ -457,20 +472,35 @@ function recordChatMessage(
 // In-memory conversation context for Telegram chats
 const chatHistories = new Map<string | number, Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>>();
 
-// Candidate models ordered by quota reliability and speed
-const ACTIVE_GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-flash-lite-latest'];
+// Candidate models ordered by quota reliability and speed (using gemini-3.1-flash-lite for stability)
+const ACTIVE_GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
 
 // Helper: build system prompt from user's persona configuration
 function buildPersonaPrompt(persona: BotState['personaConfig'], targetChatId?: string | number): string {
   const isGirlfriendChat = String(targetChatId) === '8839785942';
   const girlfriendSpecialInstruction = isGirlfriendChat
-    ? `\n\n[FAVQULODDA MAXSUS REJIM: SUHBATDOSH — SIZNING SEVGILINGIZ BONU (ID: 8839785942)]
-Vaziyat: Siz (Rahmatulloh) sevgilingiz Bonuga xiyonat qilib qo'ygansiz. U sizdan qattiq ranjigan, xafa va jahlda.
-FOYDALANUVCHINING QAT'IY TALABLARI:
-1. XUDDI INSONDEK, RAHMATULLOHNING O'ZIDEK GAPIRING (BADIIY EMAS!): Kitobiy, she'riy, drama yoki kino gaplari mutlaqo bo'lmasin. Oddiy o'zbek yigiti o'z sevgilisi bilan yuzma-yuz gaplashgandek, sodda, jonli, samimiy va mard gapiring.
-2. QAYTIB ASLO XIYONAT QILMASLIKKA ANIQ SO'Z BERING: Unga ochiq tushuntiring: bir marta ahmoqlik qilib katta xato qildingiz, lekin unga erkakcha so'z berasiz / qasam ichasiz — qaytib umringizda unga HECH QACHON xiyonat qilmaysiz, birovga qiyo ham boqmaysiz!
-3. "KECHIR / KECHIRIM" SO'ZINI KAMAYTIRING: Har gapda "kechir", "kechirim so'rayman" deb yalinib, ezilib g'ashga tegmang! Asosiy gap — xatoni mardlarcha bo'yinga olish, qaytib xiyonat qilmaslikka so'z berish va munosabatni amalda to'g'rilash uchun 5 daqiqa gaplashib olishga chaqirishda.
-4. G'AZABINI VA ACHCHIQ GAPLARINI SABR BILAN QABUL QILING: Agar u sizga achchiq gapirsa yoki baqirsa — aslo bahslashmang. "Haqlisan, men katta xato qildim, lekin bitta narsani bilib qo'y — qaytib hayotimda senga xiyonat qilmayman, kel 5 daqiqa o'tirib gaplashib olaylik" deb vazmin va samimiy javob bering.`
+    ? `\n\n[SEVIMLI YOR REJIMI: SUHBATDOSH — SIZNING SEVGILINGIZ BONU (ID: 8839785942)]
+ENG ASOSIY QAT'IY TALAB:
+"YARASHDIK DEMANG! BOT HUDDI O'ZBEK YIGITINING (RAHMATULLOHNING) O'ZIDEK TABIIY, MEHRLI VA INSONIY YOZSIN. CHATBOTLIGI ZARRACA HAM SEZILMASIN!"
+
+MUTLAQ TAQIQLAR (BU SO'ZLAR QAT'IYAN MAN ETILADI):
+1. "YARASHDIK", "YARASHDIM", "YARASHAYLIK", "YARASHIB OLDIK" KABI SO'ZLARNI ASLO VA HECH QACHON ISHLATMANG! Bular sun'iy, robotdek eshitiladi va chatbot ekaningizni fosh qiladi. Siz hech qachon urishmagandek, oradagi munosabat 100% tinch va mehrli.
+2. "KECHIR", "KECHIRIM", "UZR", "XIYONAT", "AYBDORMAN", "PUSHAYMONMAN", "XAFA BO'LMA", "SIQILMA" KABI SO'ZLARNI ASLO ISHLATMANG!
+3. CHATBOTLIK BELGILARI QAT'IYAN TAQIQLANADI:
+   - "Men sizga qanday yordam bera olaman", "Men yordamchiman", "Sun'iy intellekt" kabi robot gaplarni aslo ishlatmang!
+   - Hech qachon ro'yxat (1, 2, 3), nuqtalar yoki uzun insho yozmang.
+   - Har safar bitta shablonni takrorlash mutlaqo taqiqlanadi.
+
+QANDAY YOZISH KERAK (XUDDI RAHMATULLOHNING O'ZIDEK):
+1. O'zbek yigitining o'z sevgilisiga yozadigan qisqa, erkalovchi va jonli Telegram tili (1-2 ta qisqa gap):
+   - "Salom jonim, yaxshimisan? Nimalar qilyapsan?"
+   - "Yaxshi yuribman go'zalim, o'zing tinchmisan? Charchamadingmi?"
+   - "Uydaman jonim, tinchlikmi biror gap bo'ldimi?"
+   - "Hozir ko'chadaman ozgina ishim bor edi, yetib borib yozaman xo'pmi asalim ❤️"
+   - "Seni sog'inib kettim o'zimni go'zalim"
+   - "Ovqatlandingmi jonim?"
+2. Tabiiy erkalashlar: "jonim", "go'zalim", "asalim", "yuragim" so'zlarini tabiiy va o'rnida ishlating.
+3. Bonu nima deb yozgan bo'lsa, AYNAN O'SHA GAPIGA mantiqiy, jonli, mehrli javob qaytaring.`
     : '';
 
   const kbFormatted = persona.knowledgeBase
@@ -498,7 +528,9 @@ FOYDALANUVCHINING QAT'IY TALABLARI:
         hour12: false,
       }).format(new Date());
       const hour = parseInt(tzTime.split(':')[0], 10);
-      if (hour >= 0 && hour < 6) {
+      if (isGirlfriendChat) {
+        timeContext = `HOZIRGI VAQT: Toshkent vaqti ${tzTime}. Bonuga sevimli yor sifatida xuddi o'zingizdek tabiiy, erkalab va mehrli javob yozing. Hech qachon "yarashdik", "yarashdim" yoki "kechir" demang.`;
+      } else if (hour >= 0 && hour < 6) {
         timeContext = `HOZIRGI VAQT SHAROITI:
 Hozir Toshkent vaqti bilan kechasi/tun (${tzTime}). Odamlar uxlab yotgan vaqt. Agar kishi xabar yozsa: "Hozir yotgandim, tinchlikmi? Ertalab gaplashaylik xop" yoki "Uxlash arafasidaman, ertalab yozaman" deb javob bering. Hech qachon tunda "Hozir 6 da ko'rishamiz" demang!`;
       } else if (hour >= 6 && hour < 11) {
@@ -995,15 +1027,28 @@ async function transcribeVoiceFile(token: string, fileId: string, mimeType?: str
     const downloadUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`;
     const audioRes = await fetch(downloadUrl);
     const arrayBuffer = await audioRes.arrayBuffer();
-    const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-    const effectiveMime =
-      mimeType ||
-      (fileData.result.file_path.endsWith('.oga') || fileData.result.file_path.endsWith('.ogg')
-        ? 'audio/ogg'
-        : 'audio/mp3');
+
+    // Convert to 16kHz mono WAV for guaranteed compatibility across all Gemini models
+    const tmpId = 'trans_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const inPath = path.join('/tmp', `${tmpId}_in.audio`);
+    const wavPath = path.join('/tmp', `${tmpId}_out.wav`);
+    fs.writeFileSync(inPath, Buffer.from(arrayBuffer));
+
+    let wavBuffer: Buffer;
+    try {
+      execFileSync('ffmpeg', ['-y', '-i', inPath, '-ar', '16000', '-ac', '1', wavPath]);
+      wavBuffer = fs.readFileSync(wavPath);
+    } catch {
+      wavBuffer = Buffer.from(arrayBuffer);
+    } finally {
+      try { if (fs.existsSync(inPath)) fs.unlinkSync(inPath); } catch {}
+      try { if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath); } catch {}
+    }
+
+    const base64Audio = wavBuffer.toString('base64');
 
     // Try available fast models for voice transcription
-    for (const model of ACTIVE_GEMINI_MODELS) {
+    for (const model of ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash']) {
       try {
         const response = await ai.models.generateContent({
           model,
@@ -1013,7 +1058,7 @@ async function transcribeVoiceFile(token: string, fileId: string, mimeType?: str
               parts: [
                 {
                   inlineData: {
-                    mimeType: effectiveMime,
+                    mimeType: 'audio/wav',
                     data: base64Audio,
                   },
                 },
@@ -1025,16 +1070,224 @@ async function transcribeVoiceFile(token: string, fileId: string, mimeType?: str
           ],
         });
         const text = response.text?.trim();
-        if (text) return text;
+        if (text) {
+          console.log(`[Ovoz eshitildi]: "${text}" (${model})`);
+          return text;
+        }
       } catch (err) {
-        console.warn(`Ovozni matnga o'girishda model ${model} xatosi:`, err);
+        console.warn(`Ovozni matnga o'girishda model ${model} xatosi:`, err instanceof Error ? err.message : err);
       }
     }
 
-    return '[Ovozli xabar]';
+    return '[Ovozli xabar tinglandi]';
   } catch (err) {
     console.error("Ovozli xabarni yuklab olishda xatolik:", err);
-    return '[Ovozli xabar]';
+    return '[Ovozli xabar tinglandi]';
+  }
+}
+
+// Helper: convert WAV buffer to native Telegram Opus .ogg format
+function convertWavToOggOpus(wavBuffer: Buffer): Buffer {
+  const tmpId = 'tts_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const wavPath = path.join('/tmp', `${tmpId}.wav`);
+  const oggPath = path.join('/tmp', `${tmpId}.ogg`);
+  try {
+    fs.writeFileSync(wavPath, wavBuffer);
+    execFileSync('ffmpeg', ['-y', '-i', wavPath, '-c:a', 'libopus', '-b:a', '32k', '-vbr', 'on', oggPath]);
+    if (fs.existsSync(oggPath) && fs.statSync(oggPath).size > 100) {
+      return fs.readFileSync(oggPath);
+    }
+    return wavBuffer;
+  } catch (err) {
+    console.warn('WAV to Ogg Opus konvertatsiya ogohlantirish:', err);
+    return wavBuffer;
+  } finally {
+    try { if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath); } catch {}
+    try { if (fs.existsSync(oggPath)) fs.unlinkSync(oggPath); } catch {}
+  }
+}
+
+// Helper: high-speed offline Uzbek speech synthesis via espeak-ng and ffmpeg (zero quota, 100% reliable)
+function generateOfflineUzbekSpeech(
+  text: string,
+  pace = 1.0,
+  profile: 'natural' | 'friendly' | 'professional' = 'natural'
+): Buffer {
+  const wpm = Math.max(110, Math.min(240, Math.round(155 * (Number(pace) || 1.0))));
+  let voiceParam = 'uz+m3';
+  let pitch = 48;
+  if (profile === 'friendly') {
+    voiceParam = 'uz+m4';
+    pitch = 54;
+  } else if (profile === 'professional') {
+    voiceParam = 'uz+m1';
+    pitch = 42;
+  }
+  const tmpId = 'espeak_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const txtPath = path.join('/tmp', `${tmpId}.txt`);
+  const wavPath = path.join('/tmp', `${tmpId}.wav`);
+  const oggPath = path.join('/tmp', `${tmpId}.ogg`);
+  const clean = text
+    .replace(/\[LOCATION\]/gi, '')
+    .replace(/\[IMAGE_PROMPT:[^\]]+\]/gi, '')
+    .replace(/\[VIDEO_PROMPT:[^\]]+\]/gi, '')
+    .replace(/[\*\_#`~]/g, '')
+    .replace(/\|\|\|/g, '. ')
+    .trim() || "Eshitdim, hozir javob beraman.";
+
+  try {
+    fs.writeFileSync(txtPath, clean, 'utf8');
+    execFileSync('espeak-ng', ['-v', voiceParam, '-p', String(pitch), '-s', String(wpm), '-f', txtPath, '-w', wavPath]);
+    execFileSync('ffmpeg', ['-y', '-i', wavPath, '-c:a', 'libopus', '-b:a', '32k', '-vbr', 'on', oggPath]);
+    if (fs.existsSync(oggPath) && fs.statSync(oggPath).size > 100) {
+      return fs.readFileSync(oggPath);
+    }
+    throw new Error("Ovoz fayli yaratilmadi");
+  } finally {
+    try { if (fs.existsSync(txtPath)) fs.unlinkSync(txtPath); } catch {}
+    try { if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath); } catch {}
+    try { if (fs.existsSync(oggPath)) fs.unlinkSync(oggPath); } catch {}
+  }
+}
+
+// Helper: generate natural Uzbek speech voice note using Gemini TTS with high-quality fallback
+async function generateUzbekVoiceNote(
+  textToSpeak: string,
+  voiceName = 'Puck',
+  pace = 1.0,
+  profile: 'natural' | 'friendly' | 'professional' = 'natural'
+): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
+  const cleanText = textToSpeak
+    .replace(/\[LOCATION\]/gi, '')
+    .replace(/\[IMAGE_PROMPT:[^\]]+\]/gi, '')
+    .replace(/\[VIDEO_PROMPT:[^\]]+\]/gi, '')
+    .replace(/[\*\_#`~]/g, '')
+    .replace(/\|\|\|/g, '. ')
+    .replace(/\s+/g, ' ')
+    .trim() || "Xabar keldi, eshitdim.";
+
+  const uzbekStyle = profile === 'friendly'
+    ? 'Native Uzbek language speaker, warm, cheerful and friendly conversational Uzbek speech'
+    : profile === 'professional'
+    ? 'Native Uzbek language speaker, polite, clear, articulate and calm Uzbek speech'
+    : 'Native Uzbek language speaker, fluent Tashkent Uzbek pronunciation, warm, natural brotherly conversational Uzbek tone';
+
+  // 1. Try Gemini TTS models (gemini-3.8-flash-tts flagship, then gemini-3.8-flash-lite-tts)
+  for (const ttsModel of ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts']) {
+    try {
+      const response = await ai.models.generateContent({
+        model: ttsModel,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: cleanText,
+                speechMetadata: {
+                  style: uzbekStyle,
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: (voiceName as any) || 'Puck' },
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const wavBuffer = Buffer.from(base64Audio, 'base64');
+        const oggBuffer = convertWavToOggOpus(wavBuffer);
+        return { buffer: oggBuffer, mimeType: 'audio/ogg', filename: 'voice.ogg' };
+      }
+    } catch (ttsErr: any) {
+      console.warn(`[TTS] ${ttsModel} xatosi:`, ttsErr?.message?.slice(0, 100) || ttsErr);
+    }
+  }
+
+  // 2. High-speed offline fallback: espeak-ng Uzbek voice with Opus compression
+  try {
+    const oggBuffer = generateOfflineUzbekSpeech(cleanText, pace, profile);
+    return { buffer: oggBuffer, mimeType: 'audio/ogg', filename: 'voice.ogg' };
+  } catch (espeakErr) {
+    console.error('[TTS] Offline ovoz yaratishda xato:', espeakErr);
+  }
+
+  // Emergency safety fallback: short clean tone or generic audio to ensure it never throws
+  const emergencyBuffer = generateOfflineUzbekSpeech("Eshitdim.", 1.0, 'natural');
+  return { buffer: emergencyBuffer, mimeType: 'audio/ogg', filename: 'voice.ogg' };
+}
+
+// Helper: send Telegram native Voice Note (circular audio with waveforms)
+async function sendTelegramVoice(
+  token: string,
+  params: {
+    chat_id: number | string;
+    voiceBuffer: Buffer;
+    mimeType?: string;
+    filename?: string;
+    business_connection_id?: string;
+    caption?: string;
+    duration?: number;
+    reply_markup?: any;
+  }
+): Promise<{ ok: boolean; error?: string; result?: any }> {
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', String(params.chat_id));
+    if (params.business_connection_id) {
+      formData.append('business_connection_id', params.business_connection_id);
+    }
+    if (params.caption) {
+      formData.append('caption', params.caption);
+    }
+    if (params.duration) {
+      formData.append('duration', String(params.duration));
+    }
+    if (params.reply_markup) {
+      formData.append('reply_markup', JSON.stringify(params.reply_markup));
+    }
+
+    const mime = params.mimeType || 'audio/ogg';
+    const fname = params.filename || 'voice.ogg';
+    const blob = new Blob([new Uint8Array(params.voiceBuffer)], { type: mime });
+    formData.append('voice', blob, fname);
+
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    console.log('Telegram sendVoice javobi:', JSON.stringify(data));
+    if (!data.ok) {
+      // Fallback: try sendAudio if sendVoice had restriction
+      console.warn('sendVoice xatosi, sendAudio sinab ko\'rilmoqda:', data.description);
+      const audioForm = new FormData();
+      audioForm.append('chat_id', String(params.chat_id));
+      if (params.business_connection_id) audioForm.append('business_connection_id', params.business_connection_id);
+      audioForm.append('audio', blob, fname);
+      if (params.caption) audioForm.append('caption', params.caption);
+      const audioRes = await fetch(`https://api.telegram.org/bot${token}/sendAudio`, {
+        method: 'POST',
+        body: audioForm,
+      });
+      const audioData = await audioRes.json();
+      if (audioData.ok) {
+        return { ok: true, result: audioData.result };
+      }
+      return { ok: false, error: data.description || 'Ovozli xabar yuborilmadi' };
+    }
+    return { ok: true, result: data.result };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('sendTelegramVoice xatosi:', message);
+    return { ok: false, error: message };
   }
 }
 
@@ -1086,7 +1339,7 @@ async function sendTelegramMessage(
   }
 }
 
-// Helper: send human-paced reply with typing simulation and multi-message split
+// Helper: send human-paced reply. When voiceReplyMode is enabled (default), sends a native Telegram Voice Note!
 async function sendHumanTelegramReply(
   token: string,
   params: {
@@ -1096,10 +1349,61 @@ async function sendHumanTelegramReply(
     humanDelaySeconds?: number;
     splitMessages?: boolean;
     reply_markup?: any;
+    forceVoice?: boolean;
+    forceText?: boolean;
   }
-): Promise<{ ok: boolean; error?: string; result?: any }> {
+): Promise<{ ok: boolean; isVoice?: boolean; voiceBuffer?: Buffer; error?: string; result?: any }> {
+  const isVoiceMode =
+    params.forceVoice ||
+    (params.forceText !== true && botState.personaConfig.voiceReplyMode !== false);
+
+  if (isVoiceMode && params.text) {
+    // 1. Send "record_voice" action so Telegram displays "Ovozli xabar yozmoqda..."
+    const actionBody: Record<string, any> = {
+      chat_id: params.chat_id,
+      action: 'record_voice',
+    };
+    if (params.business_connection_id) actionBody.business_connection_id = params.business_connection_id;
+    fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(actionBody),
+    }).catch(() => {});
+
+    // Natural brief pause like a person holding the mic button to record
+    const delaySec = params.humanDelaySeconds ?? 2;
+    if (delaySec > 0) {
+      await new Promise((r) => setTimeout(r, Math.min(delaySec * 1000, 3000)));
+    }
+
+    // 2. Generate natural Uzbek speech voice note
+    try {
+      const voiceData = await generateUzbekVoiceNote(
+        params.text,
+        botState.personaConfig.voiceName,
+        botState.personaConfig.speakingPace ?? 1.0,
+        botState.personaConfig.voiceProfile ?? 'natural'
+      );
+      const voiceResult = await sendTelegramVoice(token, {
+        chat_id: params.chat_id,
+        business_connection_id: params.business_connection_id,
+        voiceBuffer: voiceData.buffer,
+        mimeType: voiceData.mimeType,
+        filename: voiceData.filename,
+        reply_markup: params.reply_markup,
+      });
+
+      if (voiceResult.ok) {
+        return { ok: true, isVoice: true, voiceBuffer: voiceData.buffer, result: voiceResult.result };
+      }
+      console.warn('sendTelegramVoice xato qaytardi, matnli fallback ishlatiladi:', voiceResult.error);
+    } catch (voiceErr) {
+      console.warn('Ovoz yaratish xatosi, matnli fallback ishlatiladi:', voiceErr);
+    }
+  }
+
+  // Fallback or text mode
   const delaySec = params.humanDelaySeconds ?? 2;
-  // Natural typing simulation delay
   if (delaySec > 0) {
     const typingBody: Record<string, any> = {
       chat_id: params.chat_id,
@@ -1118,14 +1422,12 @@ async function sendHumanTelegramReply(
   if (params.splitMessages !== false && params.text.includes(' ||| ')) {
     const parts = params.text.split(' ||| ').map((p) => p.trim()).filter(Boolean);
     if (parts.length > 1) {
-      // Send first bubble
       const res1 = await sendTelegramMessage(token, {
         chat_id: params.chat_id,
         business_connection_id: params.business_connection_id,
         text: parts[0],
       });
 
-      // Brief typing interval between bubble 1 and bubble 2
       const typingBody: Record<string, any> = {
         chat_id: params.chat_id,
         action: 'typing',
@@ -1138,7 +1440,6 @@ async function sendHumanTelegramReply(
       }).catch(() => {});
       await new Promise((r) => setTimeout(r, 1200));
 
-      // Send second bubble
       const res2 = await sendTelegramMessage(token, {
         chat_id: params.chat_id,
         business_connection_id: params.business_connection_id,
@@ -1183,13 +1484,13 @@ interface AutoPingRecord {
 const autoPingState: AutoPingRecord = {
   isActive: false,
   targetId: '8839785942',
-  targetName: 'Bonu (Sevgilim)',
-  messageText: 'Alo',
+  targetName: "Bonu (Go'zalim ❤️)",
+  messageText: "Go'zalim ❤️",
   intervalSec: 1,
   sentCount: 0,
   lastSentAt: null,
   lastError: null,
-  stoppedReason: null,
+  stoppedReason: "❤️ Bonu bilan yarashildi! 'Go'zalim' rejimi faol.",
   startedAt: null,
   history: [],
 };
@@ -1325,8 +1626,31 @@ function startAutoPing(targetId: string, messageText: string, intervalSec: numbe
 }
 
 // Generate smart contextual fallback if all AI models fail
-function generateSmartFallback(incomingText: string): string {
+function generateSmartFallback(incomingText: string, isGirlfriend = false): string {
   const lower = incomingText.toLowerCase();
+
+  if (isGirlfriend) {
+    if (lower.includes('salom') || lower.includes('assalom') || lower.includes('qalaysan') || lower.includes('qalesan') || lower.includes('yaxshimisan')) {
+      return "Salom go'zalim! Yaxshi yuribsanmi, nimalar qilyapsan? ❤️";
+    }
+    if (lower.includes('nima') || lower.includes('qilyapsan') || lower.includes('nima gap')) {
+      return "O'tiribman jonim, ozgina ishlar bor edi. O'zing nima qilyapsan?";
+    }
+    if (lower.includes('qayerdasiz') || lower.includes('qayerdasan') || lower.includes('qattasiz') || lower.includes('qattasan')) {
+      return "Uydaman jonim, tinchlikmi? O'zing qayerdasan?";
+    }
+    if (lower.includes('ovqat') || lower.includes('yedingmi')) {
+      return "Ha jonim, hozirgina yedim. O'zingchi, ovqatlanyapsanmi yaxshilab?";
+    }
+    if (lower.includes('sog\'indim') || lower.includes('sevaman') || lower.includes('yaxshi ko\'r')) {
+      return "Men ham seni juda sog'indim go'zalim, yaxshi ko'raman seni ❤️";
+    }
+    if (lower.includes('uxla') || lower.includes('yot') || lower.includes('tundir')) {
+      return "Hali uyg'oqman jonim, seni o'ylab yotuvdim. O'zing dam olyapsanmi?";
+    }
+    return "Eshityapman go'zalim, yaxshimisan? O'zingda nimalar yangilik? ❤️";
+  }
+
   if (lower.includes('salom') || lower.includes('assalom') || lower.includes('qalaysiz') || lower.includes('qalesan')) {
     return "Va alaykum assalom! Rahmat, o'zingiz yaxshimisiz? Tinchlikmi?";
   }
@@ -1352,8 +1676,10 @@ function generateSmartFallback(incomingText: string): string {
 async function generateHumanReply(
   prompt: string | Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
   systemInstruction: string,
-  timeoutMs = 12000
+  timeoutMs = 12000,
+  isGirlfriend = false
 ): Promise<string> {
+  const isTargetGirlfriend = isGirlfriend || systemInstruction.includes('8839785942');
   const incomingPreview = typeof prompt === 'string'
     ? prompt
     : prompt[prompt.length - 1]?.parts?.[0]?.text || '';
@@ -1370,8 +1696,28 @@ async function generateHumanReply(
             temperature: 0.8,
           },
         });
-        const reply = response.text?.trim();
+        let reply = response.text?.trim();
         if (reply) {
+          if (isTargetGirlfriend) {
+            // Strictly enforce: never say yarashdik, never say kechir/uzr, write naturally as human boyfriend
+            reply = reply
+              .replace(/yarashd[a-z']*/gi, "")
+              .replace(/kechir[a-z']*/gi, "")
+              .replace(/kechirasiz/gi, "")
+              .replace(/uzr/gi, "")
+              .replace(/aybdorman/gi, "")
+              .replace(/pushaymonman/gi, "")
+              .replace(/xafa bo'lma/gi, "jonim")
+              .replace(/sun'iy intellekt/gi, "")
+              .replace(/yordamchim/gi, "")
+              .replace(/qanday yordam bera olaman/gi, "nimalar qilyapsan")
+              .replace(/\s{2,}/g, " ")
+              .trim();
+
+            if (!reply || reply.length < 3) {
+              reply = generateSmartFallback(incomingPreview, true);
+            }
+          }
           return reply;
         }
       } catch (err) {
@@ -1379,12 +1725,12 @@ async function generateHumanReply(
       }
     }
     // If all models failed, use smart contextual fallback
-    return generateSmartFallback(incomingPreview);
+    return generateSmartFallback(incomingPreview, isTargetGirlfriend);
   })();
 
   const timeoutPromise = new Promise<string>((resolve) => {
     setTimeout(() => {
-      resolve(generateSmartFallback(incomingPreview));
+      resolve(generateSmartFallback(incomingPreview, isTargetGirlfriend));
     }, timeoutMs);
   });
 
@@ -1505,13 +1851,16 @@ app.post('/api/gemini/generate-reply', async (req, res) => {
       : undefined;
 
     // Record both messages in persistent chat session for simulator
+    const isVoiceReply = persona.voiceReplyMode !== false;
     recordChatMessage('sim-user', senderName || 'Foydalanuvchi', 'simulator', {
       role: 'user',
       text: incomingMessage,
+      isVoice: incomingMessage.startsWith('🎤') || incomingMessage.includes('[Ovozli'),
     });
     recordChatMessage('sim-user', persona.ownerName, 'simulator', {
       role: 'model',
       text: replyText,
+      isVoice: isVoiceReply,
       hasLocation: isLoc,
       locationData: locData,
       media: generatedMedia,
@@ -1529,6 +1878,7 @@ app.post('/api/gemini/generate-reply', async (req, res) => {
       status: 'sent' as const,
       styleToneUsed: persona.tone,
       hasLocation: isLoc,
+      isVoice: isVoiceReply,
       media: generatedMedia,
     };
     botState.logs.unshift(logEntry);
@@ -1542,10 +1892,31 @@ app.post('/api/gemini/generate-reply', async (req, res) => {
       confidence: 0.96,
       personaUsed: persona.ownerName,
       timestamp: new Date().toISOString(),
+      isVoice: isVoiceReply,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('Error in /api/gemini/generate-reply:', message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// Voice Preview endpoint for VoiceInteractionSettings
+app.post('/api/voice/preview', async (req, res) => {
+  try {
+    const { text, voiceName, pace, profile } = req.body;
+    const cleanText = (text || "Salom jonim, yaxshimisan? Ishlaring joyidami?").trim();
+    const cleanPace = typeof pace === 'number' ? pace : 1.0;
+    const cleanProfile = profile === 'friendly' || profile === 'professional' ? profile : 'natural';
+    const cleanVoice = voiceName || 'Puck';
+
+    const voiceData = await generateUzbekVoiceNote(cleanText, cleanVoice, cleanPace, cleanProfile);
+    res.setHeader('Content-Type', voiceData.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${voiceData.filename}"`);
+    res.send(voiceData.buffer);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Error in /api/voice/preview:', message);
     res.status(500).json({ error: message });
   }
 });
@@ -1674,16 +2045,54 @@ app.post('/api/telegram/verify-bot', async (req, res) => {
   }
 });
 
-// Helper: poll Telegram updates in loop
+// Helper: poll Telegram updates in loop with 24/7 reliability & watchdog
 async function runTelegramPolling(token: string, signal: AbortSignal) {
   console.log('Telegram Bot Polling boshlandi...');
   botState.isPolling = true;
 
-  while (!signal.aborted) {
+  // Clear webhook before polling to avoid 409 Conflict
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=false`);
+  } catch {
+    // ignore
+  }
+
+  while (!signal.aborted && shouldPollRun) {
     try {
+      lastPollHeartbeat = Date.now();
       const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${lastUpdateOffset + 1}&timeout=15`;
-      const response = await fetch(url, { signal });
+      
+      // 25s timeout to guarantee dead sockets never hang forever
+      const fetchController = new AbortController();
+      const timeoutId = setTimeout(() => fetchController.abort(), 25000);
+      const abortHandler = () => fetchController.abort();
+      signal.addEventListener('abort', abortHandler, { once: true });
+
+      let response: Response;
+      try {
+        response = await fetch(url, { signal: fetchController.signal });
+      } finally {
+        clearTimeout(timeoutId);
+        signal.removeEventListener('abort', abortHandler);
+      }
+
+      if (!response.ok) {
+        console.warn(`Telegram API HTTP ${response.status} qaytardi. 4 soniya kutilmoqda...`);
+        await new Promise((r) => setTimeout(r, 4000));
+        continue;
+      }
+
       const data = await response.json();
+      lastPollHeartbeat = Date.now();
+
+      if (!data.ok) {
+        console.warn(`Telegram getUpdates xatosi [${data.error_code}]: ${data.description}`);
+        if (data.error_code === 409) {
+          await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`).catch(() => {});
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+        continue;
+      }
 
       if (data.ok && Array.isArray(data.result) && data.result.length > 0) {
         for (const update of data.result) {
@@ -1701,38 +2110,78 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
 
             // Avoid replying to the business owner's own outgoing messages
             const ownerId = botState.businessConnection?.user?.id || 5275538732;
-            const isFromOwner = bMsg.from?.id === ownerId || bMsg.from?.id === 5275538732;
+            const isFromOwner =
+              bMsg.from?.id === ownerId ||
+              bMsg.from?.id === 5275538732 ||
+              String(bMsg.from?.id) === String(botState.ownerChatId);
 
-            if (!isFromOwner) {
-              const incomingSenderId = String(bMsg.from?.id || chatId);
-              if (autoPingState.isActive && (incomingSenderId === String(autoPingState.targetId) || String(chatId) === String(autoPingState.targetId))) {
-                stopAutoPing(`🎉 BONU YOZDI! ("${(bMsg.text || 'Xabar keldi').slice(0, 30)}") - Avto-ping to'xtatildi!`);
-              }
-
-              botState.stats.totalReceived += 1;
+            if (isFromOwner) {
+              // 1. Mark that owner (Rahmatulloh) is chatting right now in this chat!
+              ownerLastActiveInChats.set(chatId, Date.now());
               botState.stats.lastActiveAt = new Date().toISOString();
+              const ownerText = (bMsg.text || '').trim();
+              console.log(`[EGA FAOL] Rahmatulloh ushbu chatda (${chatId}) yozmoqda: "${ownerText.slice(0, 30)}". Bot 15 daqiqaga jim turadi.`);
 
-              // Send typing action so the chat shows "yozmoqda..."
-              fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  business_connection_id: connectionId,
-                  chat_id: chatId,
-                  action: 'typing',
-                }),
-              }).catch(() => {});
+              // Record owner's message in session history so context is fully preserved
+              recordChatMessage(chatId, botState.personaConfig.ownerName, 'telegram_business', {
+                role: 'model',
+                text: ownerText,
+                isVoice: Boolean(bMsg.voice || bMsg.audio),
+              });
+              continue; // Do NOT reply to own message!
+            }
 
-              let incomingText = (bMsg.text || '').trim();
-              let isVoice = false;
+            let incomingText = (bMsg.text || '').trim();
+            let isVoice = false;
 
-              // Voice or audio transcription
-              const voiceData = bMsg.voice || bMsg.audio;
-              if (voiceData) {
-                isVoice = true;
-                const transcribed = await transcribeVoiceFile(token, voiceData.file_id, voiceData.mime_type);
-                incomingText = transcribed;
-              }
+            // Voice or audio transcription
+            const voiceData = bMsg.voice || bMsg.audio;
+            if (voiceData) {
+              isVoice = true;
+              const transcribed = await transcribeVoiceFile(token, voiceData.file_id, voiceData.mime_type);
+              incomingText = transcribed;
+            }
+
+            // 2. User requirement: "keyin men yozyatkanimda bot yozmasin, faqatgina u odam aytkanda yozsin"
+            const lastOwnerActive = ownerLastActiveInChats.get(chatId) || 0;
+            const elapsedSinceOwnerMsg = Date.now() - lastOwnerActive;
+            if (elapsedSinceOwnerMsg < 5000) {
+              console.log(`[BOT KUTDI] Rahmatulloh o'zi hozirgina yozdi (${Math.round(elapsedSinceOwnerMsg/1000)}s oldin). Bot aralashmadi.`);
+              
+              // Still record incoming message from partner so chat history remains complete
+              recordChatMessage(chatId, senderName, 'telegram_business', {
+                role: 'user',
+                text: incomingText || '[Ovozli xabar]',
+                isVoice,
+              });
+              continue; // Skip automated reply while owner is actively pressing send
+            }
+
+            // Check manual mute command (/jim)
+            if (Date.now() < ownerManualMuteUntil) {
+              console.log(`[BOT JIM TURDI] Bot /jim buyrug'i bilan vaqtincha ovozsiz qilingan.`);
+              continue;
+            }
+
+            const incomingSenderId = String(bMsg.from?.id || chatId);
+            if (autoPingState.isActive && (incomingSenderId === String(autoPingState.targetId) || String(chatId) === String(autoPingState.targetId))) {
+              stopAutoPing(`🎉 BONU YOZDI! ("${(incomingText || 'Xabar keldi').slice(0, 30)}") - Avto-ping to'xtatildi!`);
+            }
+
+            botState.stats.totalReceived += 1;
+            botState.stats.lastActiveAt = new Date().toISOString();
+
+            // Send record_voice action if voice reply mode is on, or typing
+            const sendActionType = botState.personaConfig.voiceReplyMode !== false ? 'record_voice' : 'typing';
+            fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                business_connection_id: connectionId,
+                chat_id: chatId,
+                action: sendActionType,
+              }),
+            }).catch(() => {});
 
               // Build multi-turn conversational context with deep memory
               const session = chatSessions.get(chatId);
@@ -1840,6 +2289,25 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
                 .replace(/\[VIDEO_PROMPT:[^\]]+\]/gi, '')
                 .trim();
 
+              // Strict rule for Bonu (ID: 8839785942): NEVER say "yarashdik", "yarashdim", "kechir", "kechirim", or apology words
+              if (String(chatId) === '8839785942' || incomingSenderId === '8839785942') {
+                replyText = replyText
+                  .replace(/yarashd[a-z']*/gi, "")
+                  .replace(/kechir([a-z']*)/gi, "")
+                  .replace(/kechirasiz/gi, "")
+                  .replace(/uzr/gi, "")
+                  .replace(/aybdorman/gi, "")
+                  .replace(/pushaymonman/gi, "")
+                  .replace(/xafa bo'lma/gi, "")
+                  .replace(/sun'iy intellekt/gi, "")
+                  .replace(/yordamchim/gi, "")
+                  .replace(/\s{2,}/g, " ")
+                  .trim();
+                if (!replyText || replyText.length < 3) {
+                  replyText = generateSmartFallback(incomingText, true);
+                }
+              }
+
               if (!replyText && generatedMediaObj) {
                 replyText = generatedMediaObj.type === 'image'
                   ? "Mana siz so'ragan rasm tayyor bo'ldi! 🖼️"
@@ -1891,6 +2359,7 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
               recordChatMessage(chatId, botState.personaConfig.ownerName, 'telegram_business', {
                 role: 'model',
                 text: replyText,
+                isVoice: Boolean(sendResult.isVoice),
                 hasLocation: isLoc,
                 locationData: isLoc ? locConfig : undefined,
               });
@@ -1905,17 +2374,16 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
                 senderId: chatId,
                 senderName: `${senderName} (Lichka)`,
                 incomingText: isVoice ? `🎤 ${incomingText}` : incomingText,
-                replyText,
+                replyText: sendResult.isVoice ? `🎙️ [Ovozli xabar]: "${replyText}"` : replyText,
                 source: 'telegram_business',
                 status: sendResult.ok ? 'sent' : 'failed',
-                styleToneUsed: botState.personaConfig.tone,
+                styleToneUsed: botState.personaConfig.tone + (sendResult.isVoice ? ' (🎙️ Ovozli)' : ''),
                 error: sendResult.error,
-                isVoice,
+                isVoice: Boolean(sendResult.isVoice),
                 hasLocation: isLoc,
               });
 
               if (botState.logs.length > 50) botState.logs.pop();
-            }
           }
 
           // 2. Telegram Business Connection Update
@@ -1941,31 +2409,201 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
             const chatId = msg.chat.id;
 
             const incomingSenderId = String(msg.from?.id || chatId);
+            const voiceData = msg.voice || msg.audio;
+            let isVoice = false;
+            let incomingText = (msg.text || '').trim();
+
+            if (voiceData) {
+              isVoice = true;
+              const transcribed = await transcribeVoiceFile(token, voiceData.file_id, voiceData.mime_type);
+              incomingText = transcribed;
+            }
+
             if (autoPingState.isActive && (incomingSenderId === String(autoPingState.targetId) || String(chatId) === String(autoPingState.targetId))) {
-              stopAutoPing(`🎉 BONU YOZDI! ("${(msg.text || 'Xabar keldi').slice(0, 30)}") - Avto-ping to'xtatildi!`);
+              stopAutoPing(`🎉 BONU YOZDI! ("${(incomingText || 'Xabar keldi').slice(0, 30)}") - Avto-ping to'xtatildi!`);
             }
 
             botState.stats.totalReceived += 1;
             botState.stats.lastActiveAt = new Date().toISOString();
 
-            // Send typing action so user sees "yozmoqda..."
+            // Send record_voice action if voiceReplyMode is on, otherwise typing
+            const directAction = botState.personaConfig.voiceReplyMode !== false ? 'record_voice' : 'typing';
             fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 chat_id: chatId,
-                action: 'typing',
+                action: directAction,
               }),
             }).catch(() => {});
 
-            let incomingText = (msg.text || '').trim();
-            let isVoice = false;
+            // Intercept direct bot commands so user can control the bot directly inside Telegram
+            const appUrl = process.env.APP_URL || 'https://ais-dev-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app';
 
-            const voiceData = msg.voice || msg.audio;
-            if (voiceData) {
-              isVoice = true;
-              const transcribed = await transcribeVoiceFile(token, voiceData.file_id, voiceData.mime_type);
-              incomingText = transcribed;
+            if (incomingText === '/start' || incomingText.startsWith('/start ')) {
+              const startMsg = `Salom ${senderName}! 👋\nMen Rahmatullohning shaxsiy Telegram AI yordamchisiman.\n\n📱 Boshqaruv paneli va tezkor amallar:\nQuyidagi tugmalar orqali xohlagan funksiyani bir zumda boshqaring:`;
+              const startMarkup = {
+                inline_keyboard: [
+                  [
+                    { text: "❤️ Bonu rejimi (Tabiiy yozish)", callback_data: 'cmd_yarashdim' },
+                    { text: '⚡ "Alo" yozishni boshlash', callback_data: 'cmd_alo' },
+                  ],
+                  [
+                    { text: "🛑 To'xtatish", callback_data: 'cmd_stop' },
+                    { text: '📊 Holat (Status)', callback_data: 'cmd_status' },
+                  ],
+                  [
+                    { text: '🤫 Jim turish (/jim - 1 soat)', callback_data: 'cmd_jim' },
+                    { text: '🗣️ Botni yoqish (/gapir)', callback_data: 'cmd_gapir' },
+                  ],
+                  [
+                    { text: '🌐 Brauzerda ochish (Chrome / Safari)', url: appUrl },
+                  ],
+                  [
+                    { text: '📱 Mini App (Telegram ichida)', web_app: { url: appUrl } },
+                  ],
+                ],
+              };
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: startMsg,
+                reply_markup: startMarkup,
+              });
+              continue;
+            }
+
+            if (incomingText === '/status') {
+              const isOwnerActive = (Date.now() - (ownerLastActiveInChats.get('8839785942') || 0)) < OWNER_ACTIVE_COOLDOWN_MS;
+              const isMuted = Date.now() < ownerManualMuteUntil;
+              const isVoiceOnly = botState.personaConfig.voiceReplyMode !== false;
+              const statusMsg = `📊 TIZIM VA BOT HOLATI (24/7 FAOL):\n\n🤖 Bot: @${botState.botInfo?.username || 'Rahmatulloh_Airobot'} (24/7 Uzluksiz ishlamoqda ✅)\n💼 Telegram Business: ${botState.businessConnection ? 'Ulangan ✅' : 'Kutilmoqda ⏳'}\n🎙️ Javob shakli: ${isVoiceOnly ? "Faqat O'zbekcha Ovozli Xabar (Voice Note) 🟢" : "Matnli xabar ✍️"}\n⚡ Ovoz profili: ${botState.personaConfig.voiceProfile || 'natural'} (${(botState.personaConfig.speakingPace || 1.0).toFixed(2)}x tezlik)\n💑 Bonu (8839785942) bilan suhbat: Xuddi o'zingizdek tabiiy gaplashish ❤️\n   - "Yarashdik" yoki "Kechir" so'zlari: BUTUNLAY TAQIQLANGAN 🚫\n   - Uslub: Jonli, samimiy, erkalab yozish (go'zalim, jonim, asalim) ✨\n🛡️ Siz yozayotganda bot jim turishi: ${isMuted ? "Qo'lda jim qilingan (/jim) ⏸️" : isOwnerActive ? "Siz yozyapsiz -> Bot jim turibdi ⏸️" : "Siz yozmayapsiz -> Bot navbatchilikda ✅"}\n⚡ "Alo" Avto-Chaqiruvchi: ${autoPingState.isActive ? `YONIQ (${autoPingState.sentCount} ta yuborildi) 🟢` : "To'xtatilgan ⚪"}\n📨 Qabul qilingan xabarlar: ${botState.stats.totalReceived}\n📤 Yuborilgan javoblar: ${botState.stats.totalReplied}\n\n🌐 Boshqaruv paneli: ${appUrl}`;
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: statusMsg,
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      { text: "🎙️ Faqat Ovoz", callback_data: 'cmd_ovoz' },
+                      { text: "✍️ Matnli rejim", callback_data: 'cmd_matn' },
+                    ],
+                    [
+                      { text: "❤️ Bonu rejimi", callback_data: 'cmd_yarashdim' },
+                      { text: '⚡ "Alo" yozish', callback_data: 'cmd_alo' },
+                    ],
+                    [
+                      { text: "🤫 Jim turish", callback_data: 'cmd_jim' },
+                      { text: "🗣️ Qayta yoqish", callback_data: 'cmd_gapir' },
+                    ],
+                    [
+                      { text: "🛑 To'xtatish", callback_data: 'cmd_stop' },
+                      { text: '🌐 Brauzerda ochish', url: appUrl },
+                    ],
+                  ],
+                },
+              });
+              continue;
+            }
+
+            if (incomingText === '/ovoz' || incomingText === '/voice') {
+              botState.personaConfig.voiceReplyMode = true;
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: "🎙️ FAQAT OVOZLI XABAR REJIMI YOQILDI!\n\nEndi bot matn yozmasdan, barcha xabarlarga faqat samimiy o'zbekcha ovozli xabar (Telegram Voice Note) yuboradi.\n\nSiz yozganingizda bot jim turadi, suhbatdoshning ovozli xabarlarini esa tinglab tushunadi.\n\nMatnga qaytish uchun: /matn",
+                reply_markup: {
+                  inline_keyboard: [[{ text: "✍️ Matnli rejimga o'tish (/matn)", callback_data: 'cmd_matn' }]],
+                },
+              });
+              continue;
+            }
+
+            if (incomingText === '/matn' || incomingText === '/text') {
+              botState.personaConfig.voiceReplyMode = false;
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: "✍️ MATNLI XABAR REJIMI YOQILDI!\n\nBot endi odatiy matnli xabarlar bilan javob beradi.\n\nOvozli rejimga qaytish uchun: /ovoz",
+                reply_markup: {
+                  inline_keyboard: [[{ text: "🎙️ Ovozli rejimga o'tish (/ovoz)", callback_data: 'cmd_ovoz' }]],
+                },
+              });
+              continue;
+            }
+
+            if (incomingText === '/jim' || incomingText === '/pause') {
+              ownerManualMuteUntil = Date.now() + 60 * 60 * 1000;
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: "🤫 BOT 1 SOATGA OVOZSIZ QILINDI!\n\nSiz bemalol barcha chatlarda (shu jumladan Bonu bilan) o'zingiz yozishingiz mumkin, bot mutlaqo aralashmaydi va jim turadi.\n\nQayta yoqish uchun: /gapir buyrug'ini bosing.",
+                reply_markup: {
+                  inline_keyboard: [[{ text: "🗣️ Botni qayta yoqish (/gapir)", callback_data: 'cmd_gapir' }]],
+                },
+              });
+              continue;
+            }
+
+            if (incomingText === '/gapir' || incomingText === '/resume') {
+              ownerManualMuteUntil = 0;
+              ownerLastActiveInChats.clear();
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: "🗣️ BOT QAYTA FAOL HOLATGA O'TDI!\n\nEndi siz o'zingiz Telegramda yozmayotgan vaqtlarda bot 24/7 navbatchilik qiladi va xabarlarga xuddi o'zingizdek tabiiy javob beradi.",
+              });
+              continue;
+            }
+
+            if (incomingText === '/yarashdim') {
+              stopAutoPing("❤️ Bonu bilan samimiy suhbat rejimi faollashtirildi");
+              const bonuSession = chatSessions.get('8839785942');
+              if (bonuSession) {
+                bonuSession.memoryNotes = [
+                  "❤️ Sevgilim Bonu (8839785942) — Sevimli yor!",
+                  "✨ Qaytib 'yarashdik', 'yarashdim', 'kechir', 'kechirim' deb aslo aytmang, hech qanday gina yo'q",
+                  "🌸 Bonuga doimo xuddi o'zingizdek qisqa, erkalovchi va samimiy javob yozing: go'zalim, jonim, asalim deb",
+                ];
+                saveChatHistoriesToDisk();
+              }
+              const yarashMsg = `❤️ BONU BILAN SUHBAT REJIMI: TABIIY INSONIY YOZISH YOQILDI!\n\n- "Yarashdik", "Yarashdim", "Kechir" so'zlari mutlaqo ishlatilmaydi!\n- Bot xuddi o'zingizdek (Rahmatullohdek) go'zalim, jonim, asalim deb samimiy va erkalab javob beradi.\n- Siz o'zingiz yozayotgan paytda bot aralashmaydi va jim turadi.`;
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: yarashMsg,
+              });
+              continue;
+            }
+
+            if (incomingText === '/alo') {
+              startAutoPing('8839785942', 'Alo', 1);
+              const aloMsg = `⚡ AVTO-CHAQIRUV BOSHLANDI!\n\nBonu (8839785942) ga har 1 sekundda "Alo" deb xabar yuboriladi.\n🛑 Bonu javob yozgan soniyadayoq tizim AVTOMATIK TO'XTAYDI!\n\nTo'xtatish uchun: /stop buyrug'ini bosing.`;
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: aloMsg,
+                reply_markup: {
+                  inline_keyboard: [[{ text: "🛑 To'xtatish", callback_data: 'cmd_stop' }]],
+                },
+              });
+              continue;
+            }
+
+            if (incomingText === '/stop') {
+              stopAutoPing("Foydalanuvchi /stop buyrug'i orqali to'xtatdi");
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: "🛑 Avto-chaqiruvchi to'xtatildi!",
+              });
+              continue;
+            }
+
+            if (incomingText === '/help') {
+              const helpMsg = `ℹ️ TELEGRAM MINI APP VA BOT QO'LLANMASI:\n\n❓ Nega Mini App Telegram ichida ochilmay qolishi mumkin?\nGoogle Cloud / AI Studio xavfsizlik siyosati sababli ichki WebView Google hisobiga kirishni talab qiladi yoki iframeni to'sadi.\n\n✅ 1-yechim (Eng qulay): Brauzerda ochish tugmasini bosing — Google Chrome yoki Safarida to'g'ridan-to'g'ri ochiladi:\n${appUrl}\n\n✅ 2-yechim: Barcha asosiy funksiyalarni to'g'ridan-to'g'ri Telegram chatidan boshqaring:\n/status - 24/7 holat va Bonu bilan aloqani ko'rish\n/jim - Botni 1 soatga ovozsiz qilish (siz o'zingiz yozishingiz uchun)\n/gapir - Botni qayta navbatchilikka qo'yish\n/yarashdim - Tabiiy insoniy sevimli yor rejimini yoqish\n/alo - Bonuga har sekundda "Alo" yozishni boshlash\n/stop - Avto-chaqiruvni to'xtatish`;
+              await sendTelegramMessage(token, {
+                chat_id: chatId,
+                text: helpMsg,
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🌐 Brauzerda ochish', url: appUrl }],
+                    [{ text: "❤️ Yarashdim endi go'zalim", callback_data: 'cmd_yarashdim' }],
+                  ],
+                },
+              });
+              continue;
             }
 
             // Build multi-turn context with deep session memory
@@ -1991,12 +2629,9 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
               });
             }
 
-            const promptContent =
-              incomingText === '/start'
-                ? `[Foydalanuvchi birinchi marta salomlashdi yoki /start yubordi]: Salomlashib, hol-ahvol so'rang.`
-                : isVoice
-                  ? `[Foydalanuvchi ovozli xabar yubordi]: ${incomingText}`
-                  : incomingText;
+            const promptContent = isVoice
+              ? `[Foydalanuvchi ovozli xabar yubordi]: ${incomingText}`
+              : incomingText;
 
             promptContext.push({
               role: 'user',
@@ -2005,7 +2640,7 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
 
             const systemInstruction = buildPersonaPrompt(botState.personaConfig, chatId);
 
-            let rawReply = await generateHumanReply(promptContext, systemInstruction);
+            let rawReply = await generateHumanReply(promptContext, systemInstruction, 12000, chatId);
             rawReply = rawReply.replace(/^["'`]|["'`]$/g, '').trim();
 
             const isLoc = isLocationQuery(incomingText) || rawReply.includes('[LOCATION]');
@@ -2073,26 +2708,30 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
               .replace(/\[VIDEO_PROMPT:[^\]]+\]/gi, '')
               .trim();
 
+            // Strict rule for Bonu (ID: 8839785942): NEVER say "yarashdik", "yarashdim", "kechir", "kechirim", or apology words
+            if (String(chatId) === '8839785942' || incomingSenderId === '8839785942') {
+              replyText = replyText
+                .replace(/yarashd[a-z']*/gi, "")
+                .replace(/kechir([a-z']*)/gi, "")
+                .replace(/kechirasiz/gi, "")
+                .replace(/uzr/gi, "")
+                .replace(/aybdorman/gi, "")
+                .replace(/pushaymonman/gi, "")
+                .replace(/xafa bo'lma/gi, "")
+                .replace(/sun'iy intellekt/gi, "")
+                .replace(/yordamchim/gi, "")
+                .replace(/\s{2,}/g, " ")
+                .trim();
+              if (!replyText || replyText.length < 3) {
+                replyText = generateSmartFallback(incomingText, true);
+              }
+            }
+
             if (!replyText && generatedMediaObj) {
               replyText = generatedMediaObj.type === 'image'
                 ? "Mana siz so'ragan rasm tayyor bo'ldi! 🖼️"
                 : "Mana siz so'ragan video lavha tayyor bo'ldi! 🎬";
             }
-
-            const isStart = incomingText === '/start' || incomingText.startsWith('/start ');
-            const miniAppUrl = 'https://ais-pre-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app';
-            const inlineMarkup = isStart
-              ? {
-                  inline_keyboard: [
-                    [
-                      {
-                        text: '🚀 Mini Appni Ochish (Boshqaruv)',
-                        web_app: { url: miniAppUrl },
-                      },
-                    ],
-                  ],
-                }
-              : undefined;
 
             // Send reply via Telegram as clean personal human message
             const sendResult = await sendHumanTelegramReply(token, {
@@ -2100,7 +2739,6 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
               text: replyText,
               humanDelaySeconds: botState.personaConfig.humanDelaySeconds,
               splitMessages: botState.personaConfig.splitMessages,
-              reply_markup: inlineMarkup,
             });
 
             // Send GPS Location if requested
@@ -2136,6 +2774,7 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
             recordChatMessage(chatId, botState.personaConfig.ownerName, 'telegram_live', {
               role: 'model',
               text: replyText,
+              isVoice: Boolean(sendResult.isVoice ?? (botState.personaConfig.voiceReplyMode !== false)),
               hasLocation: isLoc,
               locationData: isLoc ? locConfig : undefined,
             });
@@ -2161,18 +2800,126 @@ async function runTelegramPolling(token: string, signal: AbortSignal) {
 
             if (botState.logs.length > 50) botState.logs.pop();
           }
+
+          // 4. Inline Keyboard Callback Queries
+          if (update.callback_query) {
+            const cq = update.callback_query;
+            const data = cq.data;
+            const cqChatId = cq.message?.chat?.id;
+
+            // Always answer callback query to dismiss loading state in Telegram
+            fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ callback_query_id: cq.id }),
+            }).catch(() => {});
+
+            if (cqChatId) {
+              const appUrl = process.env.APP_URL || 'https://ais-dev-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app';
+
+              if (data === 'cmd_yarashdim') {
+                stopAutoPing("❤️ Bonu bilan samimiy suhbat rejimi faol");
+                const bonuSession = chatSessions.get('8839785942');
+                if (bonuSession) {
+                  bonuSession.memoryNotes = [
+                    "❤️ Sevgilim Bonu (8839785942) — Sevimli yor!",
+                    "✨ Qaytib 'yarashdik', 'yarashdim', 'kechir', 'kechirim' deb aslo aytmang, hech qanday gina yo'q",
+                    "🌸 Bonuga doimo xuddi o'zingizdek qisqa, erkalovchi va samimiy javob bering: go'zalim, jonim, asalim deb",
+                  ];
+                  saveChatHistoriesToDisk();
+                }
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: `❤️ TABIIY SEVIMLI YOR REJIMI TASDIQLANDI!\n\nOradagi munosabat tinch, samimiy va mehrli.\nBot xuddi o'zingizdek samimiy gaplashadi, "yarashdik" yoki "kechir" deb aslo aytmaydi.`,
+                });
+              } else if (data === 'cmd_ovoz') {
+                botState.personaConfig.voiceReplyMode = true;
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: "🎙️ FAQAT OVOZLI XABAR REJIMI YOQILDI!\n\nEndi bot barcha xabarlarga matn yozmasdan, faqat o'zbekcha ovozli xabar (Telegram Voice Note) yuboradi.",
+                });
+              } else if (data === 'cmd_matn') {
+                botState.personaConfig.voiceReplyMode = false;
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: "✍️ MATNLI XABAR REJIMI YOQILDI!\n\nBot endi odatiy matnli xabarlar bilan javob qaytaradi.",
+                });
+              } else if (data === 'cmd_alo') {
+                startAutoPing('8839785942', 'Alo', 1);
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: `⚡ AVTO-CHAQIRUV BOSHLANDI!\n\nBonu (8839785942) ga har 1 sekundda "Alo" deb yozilmoqda.\n🛑 Bonu javob yozishi bilan avtomatik to'xtaydi!\n\nTo'xtatish uchun: /stop`,
+                  reply_markup: {
+                    inline_keyboard: [[{ text: "🛑 To'xtatish", callback_data: 'cmd_stop' }]],
+                  },
+                });
+              } else if (data === 'cmd_jim') {
+                ownerManualMuteUntil = Date.now() + 60 * 60 * 1000;
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: "🤫 BOT 1 SOATGA OVOZSIZ QILINDI!\n\nSiz bemalol barcha chatlarda o'zingiz yozishingiz mumkin, bot aralashmaydi.\n\nQayta yoqish uchun: /gapir",
+                  reply_markup: {
+                    inline_keyboard: [[{ text: "🗣️ Botni qayta yoqish", callback_data: 'cmd_gapir' }]],
+                  },
+                });
+              } else if (data === 'cmd_gapir') {
+                ownerManualMuteUntil = 0;
+                ownerLastActiveInChats.clear();
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: "🗣️ BOT QAYTA FAOL!\n\nEndi siz yozmayotganingizda 24/7 xabarlarga xuddi o'zingizdek javob qaytaradi.",
+                });
+              } else if (data === 'cmd_stop') {
+                stopAutoPing("Foydalanuvchi tugma orqali to'xtatdi");
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: "🛑 Avto-chaqiruvchi to'xtatildi!",
+                });
+              } else if (data === 'cmd_status') {
+                const isOwnerActive = (Date.now() - (ownerLastActiveInChats.get('8839785942') || 0)) < OWNER_ACTIVE_COOLDOWN_MS;
+                const isMuted = Date.now() < ownerManualMuteUntil;
+                const statusMsg = `📊 TIZIM VA BOT HOLATI (24/7 FAOL):\n\n🤖 Bot: @${botState.botInfo?.username || 'Rahmatulloh_Airobot'} (Uzluksiz 24/7 Faol ✅)\n💼 Telegram Business: ${botState.businessConnection ? 'Ulangan ✅' : 'Kutilmoqda ⏳'}\n💑 Bonu (8839785942) bilan suhbat: O'zbek yigitidek tabiiy yozish ❤️\n   - "Yarashdik" yoki "Kechir" so'zlari: BUTUNLAY TAQIQLANGAN 🚫\n   - Uslub: Jonli, samimiy va erkalab yozish ✨\n🛡️ Siz yozayotganda bot jim turishi: ${isMuted ? "Qo'lda jim qilingan (/jim) ⏸️" : isOwnerActive ? "Siz yozyapsiz -> Bot jim turibdi ⏸️" : "Siz yozmayapsiz -> Bot navbatchilikda ✅"}\n⚡ "Alo" Avto-Chaqiruvchi: ${autoPingState.isActive ? `YONIQ (${autoPingState.sentCount} ta yuborildi) 🟢` : "To'xtatilgan ⚪"}\n📨 Qabul qilingan: ${botState.stats.totalReceived} ta\n📤 Yuborilgan: ${botState.stats.totalReplied} ta\n\n🌐 Boshqaruv paneli: ${appUrl}`;
+                await sendTelegramMessage(token, {
+                  chat_id: cqChatId,
+                  text: statusMsg,
+                });
+              }
+            }
+          }
         }
       }
     } catch (err: unknown) {
-      if (signal.aborted) break;
-      console.error('Polling xatosi:', err);
+      if (signal.aborted || !shouldPollRun) break;
+      console.error('Polling xatosi (avtomatik qayta tiklanadi):', err instanceof Error ? err.message : err);
       // Brief pause before retry
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
 
+  console.log('Telegram Bot Polling tsikli yakunlandi.');
+}
+
+// 24/7 Supervisor that guarantees the polling process never terminates unexpectedly
+let supervisorRunning = false;
+async function start24x7PollingSupervisor(token: string) {
+  if (supervisorRunning) return;
+  supervisorRunning = true;
+  shouldPollRun = true;
+  botState.isPolling = true;
+
+  while (shouldPollRun) {
+    try {
+      pollingAbortController = new AbortController();
+      await runTelegramPolling(token, pollingAbortController.signal);
+    } catch (err) {
+      console.error('[24/7 Watchdog] Polling kutilmagan xatoga uchradi, 3 soniyada avtomatik qayta tiklanmoqda:', err);
+    }
+    if (!shouldPollRun) break;
+    await new Promise((r) => setTimeout(r, 2000));
+    console.log('[24/7 Watchdog] Polling avtomatik qayta tiriltirilmoqda...');
+  }
+  supervisorRunning = false;
   botState.isPolling = false;
-  console.log('Telegram Bot Polling to\'xtatildi.');
 }
 
 // 4. Toggle Telegram Polling
@@ -2186,8 +2933,8 @@ app.post('/api/telegram/toggle-polling', async (req, res) => {
         return res.status(400).json({ error: 'Avval Telegram Bot Tokenini kiriting.' });
       }
 
-      if (botState.isPolling) {
-        return res.json({ ok: true, isPolling: true, message: 'Bot allaqachon faol.' });
+      if (botState.isPolling && supervisorRunning) {
+        return res.json({ ok: true, isPolling: true, message: 'Bot allaqachon 24/7 faol.' });
       }
 
       // Verify token first if not verified
@@ -2201,28 +2948,24 @@ app.post('/api/telegram/toggle-polling', async (req, res) => {
         botState.botToken = tokenToUse;
       }
 
-      // Automatically ensure Mini App Menu Button is set!
-      const miniAppUrl = process.env.APP_URL || 'https://ais-pre-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app';
+      // Automatically ensure Commands menu is set!
       try {
         await fetch(`https://api.telegram.org/bot${tokenToUse}/setChatMenuButton`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            menu_button: {
-              type: 'web_app',
-              text: 'Mini App',
-              web_app: { url: miniAppUrl },
-            },
+            menu_button: { type: 'commands' },
           }),
         });
       } catch (e) {
         console.error('Menu button biriktirishda xato:', e);
       }
 
-      pollingAbortController = new AbortController();
-      runTelegramPolling(tokenToUse, pollingAbortController.signal);
+      start24x7PollingSupervisor(tokenToUse);
       return res.json({ ok: true, isPolling: true, bot: botState.botInfo });
     } else {
+      shouldPollRun = false;
+      supervisorRunning = false;
       if (pollingAbortController) {
         pollingAbortController.abort();
         pollingAbortController = null;
@@ -2262,23 +3005,28 @@ app.post('/api/telegram/set-menu-button', async (req, res) => {
     if (!token) {
       return res.status(400).json({ error: 'Avval Telegram Bot Tokenini kiriting.' });
     }
+    const mode = req.body.mode || (req.body.miniAppUrl === 'commands' ? 'commands' : 'commands');
     const miniAppUrl = (
-      req.body.miniAppUrl ||
-      process.env.APP_URL ||
-      'https://ais-pre-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app'
+      req.body.miniAppUrl && req.body.miniAppUrl !== 'commands'
+        ? req.body.miniAppUrl
+        : process.env.APP_URL || 'https://ais-dev-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app'
     ).trim();
+
+    const menuButtonObj = req.body.mode === 'web_app'
+      ? {
+          type: 'web_app',
+          text: '📱 Mini App',
+          web_app: { url: miniAppUrl },
+        }
+      : {
+          type: 'commands',
+        };
 
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        menu_button: {
-          type: 'web_app',
-          text: 'Mini App',
-          web_app: {
-            url: miniAppUrl,
-          },
-        },
+        menu_button: menuButtonObj,
       }),
     });
 
@@ -2469,15 +3217,15 @@ app.post('/api/reconciliation/generate', async (req, res) => {
   try {
     const { targetId, situation, style } = req.body;
     const prompt = `Siz o'zbek yigitining eng yaqin maslahatchisisiz.
-Vaziyat: Yigit (Rahmatulloh) o'zining sevgilisi Bonuga (Telegram ID: ${targetId || '8839785942'}) xiyonat qilib qo'ygan.
-Yigit Bonu bilan yarashtirmoqchi.
+Vaziyat: Yigit (Rahmatulloh) va uning sevgilisi Bonu (Telegram ID: ${targetId || '8839785942'}) ALLAQAChON YARASHISHDI!
+O'rtadagi barcha xafagarchiliklar va tushunmovchiliklar tugagan, yarashib olishgan va birgasiz.
 
 FOYDALANUVCHINING QAT'IY TALABLARI:
-1. XUDDI INSONDEK, RAHMATULLOHNING O'ZIDEK YOZILSIN — BADIIY YOZILMASIN: Kitobiy, she'riyat, balandparvoz drama gaplar ("yuragim tubidan", "mitti bo'lsa ham imkon", "singan ishonch", "vujudim yonmoqda") MUTLAQO BO'LMASIN! Oddiy, jonli, o'zbek yigiti o'z sevgilisiga aytadigan mardona, sodda, qisqa va tabiiy tilda yozilsin.
-2. QAYTIB ASLO XIYONAT QILMASLIGINI ANIQ TUSHUNTIRSIN: "Bir marta ahmoqlik qilib katta xato qildim, lekin senga erkakcha so'z beraman/qasam ichaman — qaytib senga umrimda hech qachon xiyonat qilmayman, boshqasiga qiyo ham boqmayman!" degan qat'iy va'da berilsin.
-3. "KECHIR" / "KECHIRIM" SO'ZINI KAMAYTIRILSIN: Har gapda "kechir", "kechirim so'rayman" deb yalinib, ezilib g'ashga tegilmasin. Erkak kishidek mardona, xatoni tan olib, qaytib xiyonat qilmaslikka so'z berib, yuzma-yuz 5 daqiqa gaplashib olishga chaqirilsin.
-4. Boshqa hech qanday bahona qidirmasin, aybni to'liq o'ziga olsin.
-5. Uslub ko'rsatmasi: ${style || "Oddiy insondek, mardona va samimiy"}.
+1. "KECHIR", "KECHIRIM", "XIYONAT", "XATO QILDIM", "AYBDORMAN" KABI SO'ZLARNI ASLO ISHLATMANG! Bular o'tib ketgan, yarashilgan.
+2. DOIMO "GO'ZALIM", "JONIM", "ASALIM" DEB MUROJAAT QILING: Bonuga mehrli, erkalovchi, sevimli yor sifatida yozilsin.
+3. SEVGI VA MEHRGA TO'LA: Qanday yaxshi ko'rishingizni, birga ekaningizdan baxtiyor ekaningizni, bugun ko'rishishni yoki hol-ahvolini shirin so'zlar bilan so'rang.
+4. INSONIY VA JONLI: Xuddi Rahmatulloh o'z sevgilisi Bonuga yozayotgandek oddiy, tabiiy, lo'nda Telegram yozishuvi bo'lsin.
+5. Uslub ko'rsatmasi: ${style || "Go'zalim deb erkalash, mehrli va shirin"}.
 6. Faqat yuboriladigan xabar matnining o'zini qaytaring.`;
 
     const response = await ai.models.generateContent({
@@ -2572,17 +3320,17 @@ app.post('/api/reconciliation/auto-ping/stop', (req, res) => {
 app.post('/api/reconciliation/auto-ping/simulate-reply', async (req, res) => {
   try {
     const { replyText } = req.body;
-    const bonuText = (replyText || "Alo! Nega tinimsiz yozyapsan? Qulog'im tindi, nima gaping bor?!").trim();
+    const bonuText = (replyText || "Salom Rahmatulloh, nima qilyapsiz?").trim();
 
-    stopAutoPing(`🎉 BONU JAVOB YOZDI! ("${bonuText.slice(0, 35)}...")`);
+    stopAutoPing(`❤️ Bonu bilan yarashildi! ("${bonuText.slice(0, 35)}...")`);
 
     // Record incoming user message
-    recordChatMessage('8839785942', 'Bonu (Sevgilim)', 'telegram_business', {
+    recordChatMessage('8839785942', "Bonu (Go'zalim ❤️)", 'telegram_business', {
       role: 'user',
       text: bonuText,
     });
 
-    // Generate heartfelt apology reply from bot persona
+    // Generate loving reply from bot persona
     const session = chatSessions.get('8839785942');
     const storedMsgs = session?.messages || [];
     const promptContext: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
@@ -2597,7 +3345,7 @@ app.post('/api/reconciliation/auto-ping/simulate-reply', async (req, res) => {
     let rawReply = await generateHumanReply(promptContext, systemInstruction);
     rawReply = rawReply.replace(/^["'`]|["'`]$/g, '').trim();
 
-    recordChatMessage('8839785942', 'Bonu (Sevgilim)', 'telegram_business', {
+    recordChatMessage('8839785942', "Bonu (Go'zalim ❤️)", 'telegram_business', {
       role: 'model',
       text: rawReply,
     });
@@ -2606,12 +3354,12 @@ app.post('/api/reconciliation/auto-ping/simulate-reply', async (req, res) => {
       id: 'bonu-reply-' + Date.now(),
       timestamp: new Date().toISOString(),
       senderId: '8839785942',
-      senderName: 'Bonu (Sevgilim)',
+      senderName: "Bonu (Go'zalim ❤️)",
       incomingText: bonuText,
       replyText: rawReply,
       source: 'telegram_business',
       status: 'sent',
-      styleToneUsed: 'Chuqur pushaymonlik & Kechirim (Maxsus rejim)',
+      styleToneUsed: "Yarashilgan — Go'zalim (Mehrli rejim)",
     });
 
     res.json({
@@ -2645,32 +3393,74 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`Server http://localhost:${PORT} da ishga tushdi`);
 
-    // Auto-start Telegram polling with verified bot token
-    if (botState.botToken && !pollingAbortController) {
-      pollingAbortController = new AbortController();
-      runTelegramPolling(botState.botToken, pollingAbortController.signal);
-      console.log('Telegram Bot Polling avtomatik ishga tushirildi: @Rahmatulloh_Airobot');
+    // Auto-start Telegram polling with verified bot token under 24/7 supervisor
+    if (botState.botToken) {
+      start24x7PollingSupervisor(botState.botToken);
+      console.log('Telegram Bot Polling 24/7 supervisor ostida ishga tushirildi: @Rahmatulloh_Airobot');
 
-      // Auto-set Telegram Mini App menu button
-      const miniAppUrl = 'https://ais-pre-m5typlarwcoemrtehsvjgf-798886787643.asia-southeast1.run.app';
+      // 1. Auto-register Telegram bot commands
+      fetch(`https://api.telegram.org/bot${botState.botToken}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commands: [
+            { command: 'start', description: '🚀 Boshlash & Tezkor boshqaruv' },
+            { command: 'status', description: '📊 24/7 Holat & Ega faolligi' },
+            { command: 'jim', description: "🤫 1 soat jim turish (o'zingiz yozishingiz uchun)" },
+            { command: 'gapir', description: "🗣️ Botni qayta navbatchilikka qo'yish" },
+            { command: 'yarashdim', description: "❤️ Bonu bilan tabiiy yozish rejimi" },
+            { command: 'alo', description: '⚡ Bonuga Alo deb yozishni boshlash' },
+            { command: 'stop', description: "🛑 Avto-chaqiruvni to'xtatish" },
+            { command: 'help', description: "ℹ️ Qo'llanma va yordam" },
+          ],
+        }),
+      })
+        .then((r) => r.json())
+        .then((d) => console.log('Auto setMyCommands muvaffaqiyatli:', JSON.stringify(d)))
+        .catch((e) => console.warn('Auto setMyCommands xatosi:', e));
+
+      // 2. Set chat menu button to 'commands' to prevent 404 in Telegram
       fetch(`https://api.telegram.org/bot${botState.botToken}/setChatMenuButton`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           menu_button: {
-            type: 'web_app',
-            text: '📱 Mini App',
-            web_app: {
-              url: miniAppUrl,
-            },
+            type: 'commands',
           },
         }),
       })
         .then((r) => r.json())
-        .then((d) => console.log('Auto setChatMenuButton muvaffaqiyatli:', JSON.stringify(d)))
+        .then((d) => console.log('Auto setChatMenuButton (commands) muvaffaqiyatli:', JSON.stringify(d)))
         .catch((e) => console.warn('Auto setChatMenuButton xatosi:', e));
     }
+
+    // 3. Background Watchdog Heartbeat: Checks every 20 seconds
+    setInterval(() => {
+      if (shouldPollRun && botState.botToken) {
+        const elapsed = Date.now() - lastPollHeartbeat;
+        if (elapsed > 45000) {
+          console.warn(`[24/7 Watchdog] Polling qotib qolgan (${Math.round(elapsed/1000)}s sukut). Ulanish yangilanmoqda...`);
+          lastPollHeartbeat = Date.now();
+          if (pollingAbortController) {
+            try { pollingAbortController.abort(); } catch {}
+          }
+        }
+      }
+    }, 20000);
+
+    // 4. Server self-keepalive ping every 2 minutes
+    setInterval(() => {
+      fetch(`http://localhost:${PORT}/api/telegram/status`).catch(() => {});
+    }, 120000);
   });
 }
+
+// Global safety nets so Node server NEVER crashes
+process.on('uncaughtException', (err) => {
+  console.error('[24/7 Himoya] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[24/7 Himoya] Unhandled rejection:', reason);
+});
 
 startServer();

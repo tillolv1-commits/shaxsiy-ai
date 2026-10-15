@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Wand2, Plus, X, Check, Save, MessageSquareText, Layers, RefreshCw } from 'lucide-react';
 import { PersonaConfig, StyleAnalysisResult } from '../types';
+import { VoiceInteractionSettings } from './VoiceInteractionSettings';
 
 interface StyleDnaTabProps {
   persona: PersonaConfig;
@@ -159,6 +160,14 @@ Men: Gap yo'q, salomat bo'l!`
           <span>{saveSuccessMsg}</span>
         </div>
       )}
+
+      {/* Voice Interaction Settings */}
+      <VoiceInteractionSettings
+        persona={persona}
+        onUpdatePersona={onUpdatePersona}
+        onSaveToServer={onSaveToServer}
+        isSaving={isSaving}
+      />
 
       {/* Grid: 2 Main Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

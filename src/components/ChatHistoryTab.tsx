@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   BrainCircuit,
   MessageSquare,
@@ -14,20 +14,97 @@ import {
   Navigation,
   ExternalLink,
   Sparkles,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { ChatSession } from '../types';
 
 interface ChatHistoryTabProps {
   ownerName?: string;
+  voiceName?: string;
+  voiceProfile?: string;
+  speakingPace?: number;
 }
 
-export const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({ ownerName = 'Rahmatulloh' }) => {
+export const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
+  ownerName = 'Rahmatulloh',
+  voiceName = 'Puck',
+  voiceProfile = 'natural',
+  speakingPace = 1.0,
+}) => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [selectedChatId, setSelectedChatId] = useState<string | number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [newNoteText, setNewNoteText] = useState('');
   const [isAddingNote, setIsAddingNote] = useState(false);
+  const [playingMsgId, setPlayingMsgId] = useState<string | null>(null);
+  const chatAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (chatAudioRef.current) {
+        chatAudioRef.current.pause();
+        chatAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  const handlePlayVoice = async (text: string, msgId: string) => {
+    if (playingMsgId === msgId) {
+      if (chatAudioRef.current) {
+        chatAudioRef.current.pause();
+        chatAudioRef.current = null;
+      }
+      setPlayingMsgId(null);
+      return;
+    }
+
+    if (chatAudioRef.current) {
+      chatAudioRef.current.pause();
+      chatAudioRef.current = null;
+    }
+
+    setPlayingMsgId(msgId);
+    try {
+      const cleanText = text
+        .replace(/\[LOCATION\]/gi, '')
+        .replace(/\[IMAGE_PROMPT:[^\]]+\]/gi, '')
+        .replace(/\[VIDEO_PROMPT:[^\]]+\]/gi, '')
+        .replace(/\|\|\|/g, '. ')
+        .trim();
+
+      const res = await fetch('/api/voice/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText,
+          voiceName: voiceName || 'Puck',
+          pace: speakingPace || 1.0,
+          profile: voiceProfile || 'natural',
+        }),
+      });
+
+      if (!res.ok) throw new Error("Audio yuklab bo'lmadi");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      chatAudioRef.current = audio;
+
+      audio.onended = () => {
+        setPlayingMsgId(null);
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setPlayingMsgId(null);
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+    } catch (err) {
+      console.warn("Audio xatosi:", err);
+      setPlayingMsgId(null);
+    }
+  };
 
   const fetchSessions = async () => {
     setIsLoading(true);
@@ -335,15 +412,43 @@ export const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({ ownerName = 'Rah
                                   : 'bg-slate-800 text-slate-100 rounded-bl-xs border border-slate-700/70'
                               }`}
                             >
+                              {(msg.isVoice || msg.text.startsWith('🎤') || msg.text.startsWith('[Ovozli')) && bIdx === 0 && (
+                                <div className={`flex items-center gap-1.5 mb-1 pb-1 border-b text-xs ${isMe ? 'border-sky-500/50 text-sky-100' : 'border-slate-700 text-sky-400'}`}>
+                                  <span>🎙️ Ovozli xabar</span>
+                                </div>
+                              )}
                               <p className="whitespace-pre-wrap">{bubbleText}</p>
                               {bIdx === bubbles.length - 1 && (
-                                <div className="mt-1 flex items-center justify-end gap-1.5 text-[10px] text-sky-100/70 select-none">
+                                <div className={`mt-1 flex items-center justify-end gap-1.5 text-[10px] select-none ${isMe ? 'text-sky-100/70' : 'text-slate-400'}`}>
                                   <span className="font-mono">{msg.timestamp}</span>
                                   {isMe && <CheckCheck className="h-3.5 w-3.5 text-sky-200 inline" />}
                                 </div>
                               )}
                             </div>
                           ))}
+
+                          {/* Listen button for AI responses */}
+                          {isMe && (
+                            <div className="flex items-center justify-end gap-1 px-1">
+                              <button
+                                onClick={() => handlePlayVoice(msg.text, msg.id)}
+                                className="text-[11px] text-slate-400 hover:text-sky-300 flex items-center gap-1 transition-colors py-0.5 px-2 rounded hover:bg-slate-800/80 cursor-pointer"
+                                title="O'zbekcha ovozda eshitish"
+                              >
+                                {playingMsgId === msg.id ? (
+                                  <>
+                                    <VolumeX className="h-3.5 w-3.5 text-rose-400" />
+                                    <span className="text-rose-400">To'xtatish</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Volume2 className="h-3.5 w-3.5" />
+                                    <span>Ovozli eshitish</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
 
                           {/* Location Card if present */}
                           {(msg.hasLocation || msg.locationData) && (
